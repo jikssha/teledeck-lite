@@ -1,0 +1,617 @@
+@page "/chat"
+@attribute [Authorize]
+@implements IAsyncDisposable
+
+@inject IAccountService AccountService
+@inject ITdClientManager TdClientManager
+@inject IJSRuntime JS
+
+<PageTitle>消息中心 - Teledeck</PageTitle>
+
+<div class="chat-layout">
+    @* 左侧对话列表 *@
+    <div class="chat-sidebar">
+        @* 账号选择器 *@
+        <div class="chat-sidebar-header">
+            <MudSelect T="long"
+                       Label="选择账号"
+                       Variant="Variant.Outlined"
+                       Dense="true"
+                       ValueChanged="OnAccountChanged"
+                       Value="_selectedAccountId"
+                       AnchorOrigin="Origin.BottomCenter"
+                       TransformOrigin="Origin.TopCenter"
+                       FullWidth="true">
+                @foreach (var a in _accounts)
+                {
+                    <MudSelectItem Value="a.Id">
+                        <div class="d-flex align-center">
+                            <MudIcon Icon="@GetAccountStatusIcon(a.Status)"
+                                     Color="@GetAccountStatusColor(a.Status)"
+                                     Size="Size.Small"
+                                     Class="me-2" />
+                            <span>@a.Phone</span>
+                        </div>
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+
+        <MudDivider />
+
+        @* 对话列表 *@
+        <div class="chat-list no-scrollbar">
+            @if (_isLoadingDialogs)
+            {
+                @for (int i = 0; i < 5; i++)
+                {
+                    <div class="chat-list-item pa-3">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudSkeleton SkeletonType="SkeletonType.Circle" Width="40px" Height="40px" />
+                            <MudStack Spacing="1" Class="flex-grow-1">
+                                <MudSkeleton Width="60%" Height="16px" />
+                                <MudSkeleton Width="80%" Height="12px" />
+                            </MudStack>
+                        </MudStack>
+                    </div>
+                }
+            }
+            else if (_dialogs.Count == 0)
+            {
+                <div class="empty-state pa-4">
+                    <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Large" Color="Color.Secondary" Class="mb-2" />
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center">
+                        暂无对话
+                    </MudText>
+                </div>
+            }
+            else
+            {
+                @foreach (var d in _dialogs)
+                {
+                    <div class="chat-list-item @(d.ChatId == _selectedChatId ? "selected" : "")"
+                         @onclick="@(() => SelectDialogAsync(d.ChatId))">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudAvatar Size="Size.Medium" Color="Color.Primary" Variant="Variant.Filled">
+                                @(string.IsNullOrEmpty(d.Title) ? "?" : d.Title[0].ToString().ToUpper())
+                            </MudAvatar>
+                            <MudStack Spacing="0" Class="flex-grow-1 overflow-hidden">
+                                <MudText Typo="Typo.body2" Class="text-truncate" Style="font-weight: 500;">
+                                    @d.Title
+                                </MudText>
+                                @if (!string.IsNullOrWhiteSpace(d.LastMessagePreview))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="text-truncate">
+                                        @d.LastMessagePreview
+                                    </MudText>
+                                }
+                            </MudStack>
+                        </MudStack>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    @* 右侧聊天窗口 *@
+    <div class="chat-main">
+        @if (_selectedChatId is null)
+        {
+            @* 空状态 *@
+            <div class="chat-empty-state">
+                <MudIcon Icon="@Icons.Material.Filled.Forum" Class="chat-empty-icon" />
+                <MudText Typo="Typo.h6" Color="Color.Secondary" Class="mb-2">
+                    选择一个对话开始聊天
+                </MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    从左侧列表选择对话，或搜索联系人
+                </MudText>
+            </div>
+        }
+        else
+        {
+            @* 聊天头部 *@
+            <div class="chat-header">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudAvatar Size="Size.Medium" Color="Color.Primary" Variant="Variant.Filled">
+                        @(GetCurrentChatTitle()[0].ToString().ToUpper())
+                    </MudAvatar>
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.subtitle1" Style="font-weight: 500;">
+                            @GetCurrentChatTitle()
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @(_messages.Count) 条消息
+                        </MudText>
+                    </MudStack>
+                </MudStack>
+                <MudSpacer />
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Color="Color.Default"
+                               OnClick="LoadHistoryAsync"
+                               title="刷新消息" />
+            </div>
+
+            <MudDivider />
+
+            @* 消息区域 *@
+            <div class="chat-messages chat-container no-scrollbar" @ref="_messagesContainer">
+                @if (_isLoadingMessages)
+                {
+                    <div class="d-flex justify-center pa-4">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
+                    </div>
+                }
+                else if (_messages.Count == 0)
+                {
+                    <div class="d-flex flex-column align-center justify-center pa-8" style="height: 100%;">
+                        <MudIcon Icon="@Icons.Material.Filled.ChatBubbleOutline" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                            暂无消息记录
+                        </MudText>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var m in _messages)
+                    {
+                        <div class="chat-bubble @(m.IsOutgoing ? "chat-bubble-sent" : "chat-bubble-received")">
+                            <div class="chat-bubble-text">@m.Text</div>
+                            <div class="chat-bubble-time">@m.Date.ToLocalTime().ToString("HH:mm")</div>
+                        </div>
+                    }
+                }
+            </div>
+
+            @* 输入区域 *@
+            <div class="chat-input-area">
+                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                    <MudTextField @bind-Value="_draft"
+                                  Placeholder="输入消息…"
+                                  Variant="Variant.Outlined"
+                                  FullWidth="true"
+                                  Immediate="true"
+                                  OnKeyDown="OnInputKeyDown"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@Icons.Material.Filled.EmojiEmotions"
+                                  AdornmentColor="Color.Secondary"
+                                  Class="chat-input" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Send"
+                                   Color="Color.Primary"
+                                   Variant="Variant.Filled"
+                                   Size="Size.Large"
+                                   OnClick="SendAsync"
+                                   Disabled="@string.IsNullOrWhiteSpace(_draft)"
+                                   title="发送消息" />
+                </MudStack>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .chat-layout {
+        display: flex;
+        height: calc(100vh - 100px);
+        gap: 16px;
+    }
+
+    /* 左侧边栏 */
+    .chat-sidebar {
+        width: 350px;
+        min-width: 350px;
+        background-color: var(--teledeck-surface);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .chat-sidebar-header {
+        padding: 16px;
+    }
+
+    .chat-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+    }
+
+    .chat-list-item {
+        padding: 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .chat-list-item:hover {
+        background-color: rgba(42, 171, 238, 0.08);
+    }
+
+    .chat-list-item.selected {
+        background-color: rgba(42, 171, 238, 0.15);
+    }
+
+    /* 右侧主区域 */
+    .chat-main {
+        flex: 1;
+        background-color: var(--teledeck-surface);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .chat-empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+    }
+
+    .chat-empty-icon {
+        font-size: 80px !important;
+        color: var(--teledeck-text-secondary);
+        margin-bottom: 16px;
+    }
+
+    .chat-header {
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        background-color: rgba(0, 0, 0, 0.2);
+    }
+
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        /* Telegram 风格背景纹理 */
+        background: linear-gradient(135deg, rgba(42, 171, 238, 0.02) 0%, transparent 50%, rgba(42, 171, 238, 0.02) 100%);
+    }
+
+    .chat-input-area {
+        padding: 16px;
+        background-color: rgba(0, 0, 0, 0.2);
+    }
+
+    .chat-input .mud-input-outlined-border {
+        border-radius: 24px !important;
+    }
+
+    /* 气泡文本样式 */
+    .chat-bubble-text {
+        word-wrap: break-word;
+        white-space: pre-wrap;
+    }
+
+    /* 响应式调整 */
+    @@media (max-width: 960px) {
+        .chat-layout {
+            flex-direction: column;
+            height: auto;
+        }
+
+        .chat-sidebar {
+            width: 100%;
+            min-width: unset;
+            max-height: 300px;
+        }
+
+        .chat-main {
+            min-height: 500px;
+        }
+    }
+</style>
+
+@code {
+    private List<AccountDto> _accounts = new();
+    private List<ChatDialogDto> _dialogs = new();
+    private List<ChatMessageDto> _messages = new();
+
+    private long _selectedAccountId;
+    private long? _selectedChatId;
+    private string _draft = string.Empty;
+
+    private bool _isLoadingDialogs;
+    private bool _isLoadingMessages;
+    private bool _isPollingInProgress; // 防抖标志
+
+    private TdClientLease? _lease;
+    private CancellationTokenSource? _pollCts;
+    private ElementReference _messagesContainer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _accounts = (await AccountService.ListAsync(CancellationToken.None)).ToList();
+        var ready = _accounts.FirstOrDefault(x => x.Status == AccountStatus.Ready) ?? _accounts.FirstOrDefault();
+        if (ready is not null)
+            await OnAccountChanged(ready.Id);
+    }
+
+    private string GetCurrentChatTitle()
+    {
+        var dialog = _dialogs.FirstOrDefault(d => d.ChatId == _selectedChatId);
+        return dialog?.Title ?? "未知对话";
+    }
+
+    private static string GetAccountStatusIcon(AccountStatus status) => status switch
+    {
+        AccountStatus.Ready => Icons.Material.Filled.CheckCircle,
+        AccountStatus.Authorizing => Icons.Material.Filled.HourglassTop,
+        AccountStatus.NeedRelogin => Icons.Material.Filled.Warning,
+        _ => Icons.Material.Filled.Help
+    };
+
+    private static Color GetAccountStatusColor(AccountStatus status) => status switch
+    {
+        AccountStatus.Ready => Color.Success,
+        AccountStatus.Authorizing => Color.Warning,
+        AccountStatus.NeedRelogin => Color.Error,
+        _ => Color.Default
+    };
+
+    private async Task OnAccountChanged(long accountId)
+    {
+        _selectedAccountId = accountId;
+        _selectedChatId = null;
+        _dialogs.Clear();
+        _messages.Clear();
+
+        if (_lease is not null)
+            await _lease.DisposeAsync();
+
+        _lease = await TdClientManager.AcquireAsync(accountId, CancellationToken.None);
+        await LoadDialogsAsync();
+    }
+
+    private async Task LoadDialogsAsync()
+    {
+        if (_lease is null)
+            return;
+
+        _isLoadingDialogs = true;
+        StateHasChanged();
+
+        try
+        {
+            var json = await _lease.Client.ExecuteAsync(new JsonObject
+            {
+                ["@type"] = "getChats",
+                ["chat_list"] = new JsonObject { ["@type"] = "chatListMain" },
+                ["limit"] = 50
+            }.ToJsonString(), TimeSpan.FromSeconds(15), CancellationToken.None);
+
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            ThrowIfError(doc.RootElement);
+
+            if (!doc.RootElement.TryGetProperty("chat_ids", out var ids) || ids.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return;
+
+            var list = new List<ChatDialogDto>();
+            foreach (var idEl in ids.EnumerateArray())
+            {
+                if (!idEl.TryGetInt64(out var chatId))
+                    continue;
+
+                var chatJson = await _lease.Client.ExecuteAsync(new JsonObject
+                {
+                    ["@type"] = "getChat",
+                    ["chat_id"] = chatId
+                }.ToJsonString(), TimeSpan.FromSeconds(15), CancellationToken.None);
+                using var chatDoc = System.Text.Json.JsonDocument.Parse(chatJson);
+                ThrowIfError(chatDoc.RootElement);
+
+                var title = chatDoc.RootElement.TryGetProperty("title", out var t) ? t.GetString() : null;
+                title ??= $"Chat {chatId}";
+
+                string? preview = null;
+                if (chatDoc.RootElement.TryGetProperty("last_message", out var lastMsg) &&
+                    lastMsg.TryGetProperty("content", out var content) &&
+                    content.TryGetProperty("@type", out var ctype) && ctype.GetString() == "messageText" &&
+                    content.TryGetProperty("text", out var txt) && txt.TryGetProperty("text", out var txt2))
+                {
+                    preview = txt2.GetString();
+                }
+
+                list.Add(new ChatDialogDto(chatId, title, preview));
+            }
+
+            _dialogs = list;
+        }
+        finally
+        {
+            _isLoadingDialogs = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SelectDialogAsync(long chatId)
+    {
+        _selectedChatId = chatId;
+        await LoadHistoryAsync();
+        StartPolling();
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (_lease is null || _selectedChatId is null)
+            return;
+
+        _isLoadingMessages = true;
+        StateHasChanged();
+
+        try
+        {
+            var json = await _lease.Client.ExecuteAsync(new JsonObject
+            {
+                ["@type"] = "getChatHistory",
+                ["chat_id"] = _selectedChatId.Value,
+                ["from_message_id"] = 0,
+                ["offset"] = 0,
+                ["limit"] = 50
+            }.ToJsonString(), TimeSpan.FromSeconds(15), CancellationToken.None);
+
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            ThrowIfError(doc.RootElement);
+
+            if (!doc.RootElement.TryGetProperty("messages", out var messages) || messages.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return;
+
+            var list = new List<ChatMessageDto>();
+            foreach (var msg in messages.EnumerateArray())
+            {
+                if (!msg.TryGetProperty("id", out var idEl) || !idEl.TryGetInt64(out var msgId))
+                    continue;
+
+                var isOutgoing = msg.TryGetProperty("is_outgoing", out var outEl) && outEl.ValueKind == System.Text.Json.JsonValueKind.True;
+                var unix = msg.TryGetProperty("date", out var dEl) && dEl.TryGetInt64(out var v) ? v : 0;
+                var date = DateTimeOffset.FromUnixTimeSeconds(unix);
+
+                var text = "";
+                if (msg.TryGetProperty("content", out var content) &&
+                    content.TryGetProperty("@type", out var ctype) && ctype.GetString() == "messageText" &&
+                    content.TryGetProperty("text", out var t) && t.TryGetProperty("text", out var tt))
+                {
+                    text = tt.GetString() ?? "";
+                }
+
+                list.Add(new ChatMessageDto(msgId, isOutgoing, date, text));
+            }
+
+            list.Reverse();
+            _messages = list;
+        }
+        finally
+        {
+            _isLoadingMessages = false;
+            StateHasChanged();
+
+            // 滚动到底部
+            await ScrollToBottom();
+        }
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", "document.querySelector('.chat-messages')?.scrollTo({ top: document.querySelector('.chat-messages')?.scrollHeight, behavior: 'smooth' })");
+        }
+        catch
+        {
+            // 忽略滚动错误
+        }
+    }
+
+    private async Task OnInputKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendAsync();
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (_lease is null || _selectedChatId is null)
+            return;
+
+        var text = _draft.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        _draft = string.Empty;
+
+        var req = new JsonObject
+        {
+            ["@type"] = "sendMessage",
+            ["chat_id"] = _selectedChatId.Value,
+            ["input_message_content"] = new JsonObject
+            {
+                ["@type"] = "inputMessageText",
+                ["text"] = new JsonObject { ["@type"] = "formattedText", ["text"] = text }
+            }
+        }.ToJsonString();
+
+        _ = await _lease.Client.ExecuteAsync(req, TimeSpan.FromSeconds(15), CancellationToken.None);
+        await LoadHistoryAsync();
+    }
+
+    private void StartPolling()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = new CancellationTokenSource();
+        var token = _pollCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var timer = new PeriodicTimer(TimeSpan.FromSeconds(3)); // 增加到3秒减少请求频率
+                while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
+                {
+                    // 防抖：如果正在加载中则跳过本次轮询
+                    if (_isPollingInProgress || _isLoadingMessages)
+                        continue;
+
+                    try
+                    {
+                        _isPollingInProgress = true;
+                        await InvokeAsync(async () =>
+                        {
+                            // 仅在有选中对话时刷新
+                            if (_selectedChatId.HasValue && _lease is not null)
+                            {
+                                await LoadHistoryAsync();
+                            }
+                        });
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // 组件已销毁，退出轮询
+                        break;
+                    }
+                    catch (Exception)
+                    {
+                        // 记录错误但继续轮询
+                    }
+                    finally
+                    {
+                        _isPollingInProgress = false;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 正常取消，不需要处理
+            }
+        }, token);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
+
+        if (_lease is not null)
+            await _lease.DisposeAsync();
+        _lease = null;
+    }
+
+    private static void ThrowIfError(System.Text.Json.JsonElement root)
+    {
+        if (root.TryGetProperty("@type", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.String && t.GetString() == "error")
+        {
+            var msg = root.TryGetProperty("message", out var m) ? m.GetString() : "TDLib 返回错误";
+            throw new InvalidOperationException(msg);
+        }
+    }
+}

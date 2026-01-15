@@ -1,0 +1,237 @@
+@page "/admin/modules"
+@attribute [Authorize(Roles = "Admin")]
+@implements IDisposable
+
+@inject IModuleManager ModuleManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>模块管理</PageTitle>
+
+<MudStack Spacing="3">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.h5">扩展模块管理</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Upload" OnClick="OpenUploadDialogAsync">
+            上传模块
+        </MudButton>
+    </MudStack>
+
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        管理已安装的扩展模块，支持上传 ZIP 格式的模块包进行功能扩展。
+    </MudText>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else if (_modules.Count == 0)
+    {
+        <MudPaper Class="pa-6" Elevation="1">
+            <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Large" Color="Color.Default" />
+                <MudText Typo="Typo.h6">暂无已安装模块</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">点击"上传模块"按钮安装您的第一个扩展模块</MudText>
+            </MudStack>
+        </MudPaper>
+    }
+    else
+    {
+        <MudTable Items="@_modules" Hover="true" Striped="true" Dense="true">
+            <HeaderContent>
+                <MudTh>模块</MudTh>
+                <MudTh>版本</MudTh>
+                <MudTh>状态</MudTh>
+                <MudTh>安装时间</MudTh>
+                <MudTh Style="width: 200px">操作</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.body1">@context.Name</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.Id</MudText>
+                        @if (!string.IsNullOrEmpty(context.Description))
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">@context.Description</MudText>
+                        }
+                    </MudStack>
+                </MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">v@context.Version</MudChip>
+                </MudTd>
+                <MudTd>
+                    @switch (context.Status)
+                    {
+                        case ModuleStatus.Enabled:
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">已启用</MudChip>
+                            break;
+                        case ModuleStatus.Disabled:
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Icon="@Icons.Material.Filled.PauseCircle">已禁用</MudChip>
+                            break;
+                        case ModuleStatus.Error:
+                            <MudTooltip Text="@context.ErrorMessage">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Icon="@Icons.Material.Filled.Error">加载错误</MudChip>
+                            </MudTooltip>
+                            break;
+                    }
+                </MudTd>
+                <MudTd>
+                    <MudText Typo="Typo.body2">@context.InstalledAt.ToString("yyyy-MM-dd HH:mm")</MudText>
+                </MudTd>
+                <MudTd>
+                    <MudStack Row="true" Spacing="1">
+                        @if (context.Status == ModuleStatus.Enabled)
+                        {
+                            <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" OnClick="() => DisableModuleAsync(context)">
+                                禁用
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Size="Size.Small" Color="Color.Success" Variant="Variant.Text" OnClick="() => EnableModuleAsync(context)">
+                                启用
+                            </MudButton>
+                        }
+                        <MudButton Size="Size.Small" Color="Color.Info" Variant="Variant.Text" OnClick="() => ShowModuleDetailsAsync(context)">
+                            详情
+                        </MudButton>
+                        <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text" OnClick="() => UninstallModuleAsync(context)">
+                            卸载
+                        </MudButton>
+                    </MudStack>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudStack>
+
+@code {
+    private List<ModuleInfo> _modules = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ModuleManager.ModuleStatusChanged += OnModuleStatusChanged;
+        await LoadModulesAsync();
+    }
+
+    private async Task LoadModulesAsync()
+    {
+        _loading = true;
+        try
+        {
+            var modules = await ModuleManager.GetAllModulesAsync();
+            _modules = modules.ToList();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenUploadDialogAsync()
+    {
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ModuleUploadDialog>("上传模块", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await LoadModulesAsync();
+            Snackbar.Add("模块安装成功", Severity.Success);
+        }
+    }
+
+    private async Task EnableModuleAsync(ModuleInfo module)
+    {
+        var success = await ModuleManager.EnableModuleAsync(module.Id);
+        if (success)
+        {
+            Snackbar.Add($"模块 {module.Name} 已启用，页面刷新后生效", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add($"启用模块失败", Severity.Error);
+        }
+        await LoadModulesAsync();
+    }
+
+    private async Task DisableModuleAsync(ModuleInfo module)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "确认禁用",
+            $"确定要禁用模块 \"{module.Name}\" 吗？禁用后模块功能将不可用。",
+            yesText: "禁用",
+            cancelText: "取消");
+
+        if (confirm != true) return;
+
+        var success = await ModuleManager.DisableModuleAsync(module.Id);
+        if (success)
+        {
+            Snackbar.Add($"模块 {module.Name} 已禁用，页面刷新后生效", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add($"禁用模块失败", Severity.Error);
+        }
+        await LoadModulesAsync();
+    }
+
+    private async Task UninstallModuleAsync(ModuleInfo module)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "确认卸载",
+            $"确定要卸载模块 \"{module.Name}\" 吗？此操作将删除模块文件且不可恢复。",
+            yesText: "卸载",
+            cancelText: "取消");
+
+        if (confirm != true) return;
+
+        var success = await ModuleManager.UninstallModuleAsync(module.Id);
+        if (success)
+        {
+            Snackbar.Add($"模块 {module.Name} 已卸载", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add($"卸载模块失败", Severity.Error);
+        }
+        await LoadModulesAsync();
+    }
+
+    private async Task ShowModuleDetailsAsync(ModuleInfo module)
+    {
+        var parameters = new DialogParameters<ModuleDetailsDialog>
+        {
+            { x => x.Module, module }
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true
+        };
+
+        await DialogService.ShowAsync<ModuleDetailsDialog>("模块详情", parameters, options);
+    }
+
+    private void OnModuleStatusChanged(object? sender, ModuleStatusChangedEventArgs e)
+    {
+        InvokeAsync(async () =>
+        {
+            await LoadModulesAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        ModuleManager.ModuleStatusChanged -= OnModuleStatusChanged;
+    }
+}

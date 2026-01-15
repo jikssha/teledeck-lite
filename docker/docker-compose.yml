@@ -1,0 +1,15 @@
+services:
+  tglitepanel:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "7070:7070"
+    environment:
+      DATA_DIR: ${DATA_DIR:-/data}
+      DB_PATH: ${DB_PATH:-/data/app.db}
+      ADMIN_INIT_USER: ${ADMIN_INIT_USER:-admin}
+      ADMIN_INIT_PASS: ${ADMIN_INIT_PASS:-change-me}
+    volumes:
+      - ../data:/data
+    restart: unless-stopped

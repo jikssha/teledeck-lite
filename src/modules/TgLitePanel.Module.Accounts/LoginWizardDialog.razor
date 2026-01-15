@@ -1,0 +1,448 @@
+@using TgLitePanel.Core.Abstractions.Exceptions
+@implements IDisposable
+
+@inject IAccountService AccountService
+
+<MudDialog Class="login-wizard-dialog">
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Custom.Brands.Telegram" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">接码登录向导</MudText>
+        </MudStack>
+    </TitleContent>
+
+    <DialogContent>
+        @* 步骤指示器 *@
+        <MudStack Row="true" Justify="Justify.Center" Class="mb-4">
+            @for (int i = 0; i < 3; i++)
+            {
+                var step = i;
+                <MudStack AlignItems="AlignItems.Center" Spacing="1">
+                    <MudAvatar Size="Size.Small"
+                               Color="@(step < _activeIndex ? Color.Success : (step == _activeIndex ? Color.Primary : Color.Default))"
+                               Variant="@(step <= _activeIndex ? Variant.Filled : Variant.Outlined)">
+                        @if (step < _activeIndex)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" />
+                        }
+                        else
+                        {
+                            @(step + 1)
+                        }
+                    </MudAvatar>
+                    <MudText Typo="Typo.caption" Color="@(step == _activeIndex ? Color.Primary : Color.Secondary)">
+                        @GetStepLabel(step)
+                    </MudText>
+                </MudStack>
+                @if (i < 2)
+                {
+                    <MudDivider Vertical="false" FlexItem="true" Class="mx-2" Style="width: 40px; align-self: center; margin-top: -16px;" />
+                }
+            }
+        </MudStack>
+
+        @* 错误提示 *@
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <MudAlert Severity="Severity.Error"
+                      Class="mb-4"
+                      Dense="true"
+                      ShowCloseIcon="true"
+                      CloseIconClicked="() => _error = null">
+                @_error
+            </MudAlert>
+        }
+
+        @* 加载中状态 *@
+        @if (_busy)
+        {
+            <div class="d-flex flex-column align-center justify-center pa-8">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-4">
+                    @_loadingMessage
+                </MudText>
+            </div>
+        }
+        else
+        {
+            @* 步骤内容 *@
+            <div class="step-content">
+                @switch (_activeIndex)
+                {
+                    case 0:
+                        @* 手机号输入 *@
+                        <MudStack Spacing="3">
+                            <MudText Typo="Typo.body1" Class="mb-2">
+                                请输入您的 Telegram 手机号码
+                            </MudText>
+                            <MudTextField @bind-Value="_phone"
+                                          Label="手机号"
+                                          Placeholder="8613812345678"
+                                          Variant="Variant.Outlined"
+                                          Adornment="Adornment.Start"
+                                          AdornmentText="+"
+                                          AdornmentColor="Color.Primary"
+                                          Required="true"
+                                          FullWidth="true"
+                                          Immediate="true"
+                                          AutoFocus="true"
+                                          InputType="InputType.Text"
+                                          Style="font-size: 1.25rem;" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="me-1" Style="vertical-align: middle;" />
+                                格式示例：8613812345678（无需输入 + 号）
+                            </MudText>
+                        </MudStack>
+                        break;
+
+                    case 1:
+                        @* 验证码输入 *@
+                        <MudStack Spacing="3">
+                            <MudText Typo="Typo.body1" Class="mb-2">
+                                请输入 Telegram 发送的验证码
+                            </MudText>
+                            <MudStack Row="true" Justify="Justify.Center" Spacing="2">
+                                @for (int i = 0; i < 5; i++)
+                                {
+                                    var idx = i;
+                                    <MudTextField @bind-Value="_codeDigits[idx]"
+                                                  Variant="Variant.Outlined"
+                                                  MaxLength="1"
+                                                  Style="width: 56px; text-align: center; font-size: 1.5rem; font-weight: 600;"
+                                                  InputType="InputType.Text"
+                                                  Class="code-digit-input"
+                                                  Immediate="true"
+                                                  TextChanged="@(val => OnCodeDigitChanged(idx, val))"
+                                                  @ref="_codeInputRefs[idx]" />
+                                }
+                            </MudStack>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Align="Align.Center">
+                                <MudIcon Icon="@Icons.Material.Filled.Sms" Size="Size.Small" Class="me-1" Style="vertical-align: middle;" />
+                                验证码已发送至 +@_phone
+                            </MudText>
+                            @* 重发验证码 *@
+                            <MudStack Row="true" Justify="Justify.Center" Spacing="2">
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           StartIcon="@Icons.Material.Filled.ContentPaste"
+                                           OnClick="PasteCode"
+                                           Class="align-self-center">
+                                    从剪贴板粘贴
+                                </MudButton>
+                                @if (_resendCountdown > 0)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="align-self-center">
+                                        @_resendCountdown 秒后可重发
+                                    </MudText>
+                                }
+                                else
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Secondary"
+                                               Size="Size.Small"
+                                               StartIcon="@Icons.Material.Filled.Refresh"
+                                               OnClick="ResendCode"
+                                               Disabled="_busy"
+                                               Class="align-self-center">
+                                        重发验证码
+                                    </MudButton>
+                                }
+                            </MudStack>
+                        </MudStack>
+                        break;
+
+                    case 2:
+                        @* 2FA 密码输入 *@
+                        <MudStack Spacing="3">
+                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                                <MudText Typo="Typo.body2">
+                                    您的账号已启用两步验证，请输入密码
+                                </MudText>
+                            </MudAlert>
+                            <MudTextField @bind-Value="_password"
+                                          Label="2FA 密码"
+                                          Variant="Variant.Outlined"
+                                          InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                                          FullWidth="true"
+                                          AutoFocus="true"
+                                          Adornment="Adornment.End"
+                                          AdornmentIcon="@(_showPassword ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                          OnAdornmentClick="TogglePasswordVisibility"
+                                          AdornmentAriaLabel="切换密码可见性" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="me-1" Style="vertical-align: middle;" />
+                                如未开启两步验证，可直接点击"完成"跳过
+                            </MudText>
+                        </MudStack>
+                        break;
+                }
+            </div>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Default"
+                   OnClick="Cancel"
+                   Disabled="_busy">
+            取消
+        </MudButton>
+        <MudSpacer />
+        @if (_activeIndex > 0)
+        {
+            <MudButton Variant="Variant.Outlined"
+                       OnClick="Back"
+                       Disabled="_busy"
+                       StartIcon="@Icons.Material.Filled.ArrowBack">
+                上一步
+            </MudButton>
+        }
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="Next"
+                   Disabled="_busy || !CanProceed()"
+                   EndIcon="@(_activeIndex == 2 ? Icons.Material.Filled.Check : Icons.Material.Filled.ArrowForward)">
+            @(_activeIndex == 2 ? "完成" : "下一步")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .login-wizard-dialog {
+        min-width: 420px;
+    }
+
+    .login-wizard-dialog .step-content {
+        min-height: 180px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .login-wizard-dialog .code-digit-input .mud-input-root {
+        text-align: center;
+    }
+
+    .login-wizard-dialog .code-digit-input input {
+        text-align: center;
+        font-family: 'Consolas', 'Monaco', monospace;
+    }
+</style>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private int _activeIndex;
+    private bool _busy;
+    private string? _error;
+    private string _loadingMessage = "正在连接 Telegram 服务器...";
+
+    private long _accountId;
+    private string _phone = string.Empty;
+    private string[] _codeDigits = new string[5];
+    private string _password = string.Empty;
+    private bool _showPassword;
+    private int _resendCountdown;
+    private System.Threading.Timer? _countdownTimer;
+
+    private MudTextField<string>?[] _codeInputRefs = new MudTextField<string>?[5];
+
+    private string _code => string.Join("", _codeDigits.Where(d => !string.IsNullOrEmpty(d)));
+
+    private string GetStepLabel(int step) => step switch
+    {
+        0 => "手机号",
+        1 => "验证码",
+        2 => "2FA",
+        _ => ""
+    };
+
+    private bool CanProceed() => _activeIndex switch
+    {
+        0 => !string.IsNullOrWhiteSpace(_phone) && _phone.Length >= 10,
+        1 => _code.Length >= 4,
+        2 => true, // 2FA is optional
+        _ => false
+    };
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Back()
+    {
+        _error = null;
+        if (_activeIndex > 0)
+            _activeIndex--;
+    }
+
+    private void TogglePasswordVisibility() => _showPassword = !_showPassword;
+
+    private void OnCodeDigitChanged(int index, string value)
+    {
+        // 处理粘贴整个验证码的情况
+        if (!string.IsNullOrEmpty(value) && value.Length > 1)
+        {
+            var digits = new string(value.Where(char.IsDigit).Take(5).ToArray());
+            for (int i = 0; i < 5 && i < digits.Length; i++)
+            {
+                _codeDigits[i] = digits[i].ToString();
+            }
+            StateHasChanged();
+            return;
+        }
+
+        // 自动跳转到下一个输入框（添加异常保护）
+        if (!string.IsNullOrEmpty(value) && index < 4)
+        {
+            _ = TryFocusNextInputAsync(index + 1);
+        }
+    }
+
+    private async Task TryFocusNextInputAsync(int nextIndex)
+    {
+        try
+        {
+            // 延迟一小段时间确保 DOM 已更新
+            await Task.Delay(10);
+            var nextInput = _codeInputRefs[nextIndex];
+            if (nextInput is not null)
+            {
+                await nextInput.FocusAsync();
+            }
+        }
+        catch (JSException)
+        {
+            // JavaScript 互操作失败，忽略（某些浏览器可能不支持）
+        }
+        catch (ObjectDisposedException)
+        {
+            // 组件已销毁，忽略
+        }
+    }
+
+    private async Task PasteCode()
+    {
+        try
+        {
+            var clipboardText = await JS.InvokeAsync<string>("navigator.clipboard.readText");
+            if (!string.IsNullOrEmpty(clipboardText))
+            {
+                var digits = new string(clipboardText.Where(char.IsDigit).Take(5).ToArray());
+                for (int i = 0; i < 5; i++)
+                {
+                    _codeDigits[i] = i < digits.Length ? digits[i].ToString() : "";
+                }
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // 剪贴板访问失败，忽略
+        }
+    }
+
+    private async Task ResendCode()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            _loadingMessage = "正在重发验证码...";
+            StateHasChanged();
+
+            await AccountService.ResendCodeAsync(_accountId, CancellationToken.None);
+            StartResendCountdown();
+        }
+        catch (Exception ex)
+        {
+            _error = $"重发失败：{ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void StartResendCountdown()
+    {
+        _resendCountdown = 60;
+        _countdownTimer?.Dispose();
+        _countdownTimer = new System.Threading.Timer(_ =>
+        {
+            if (_resendCountdown > 0)
+            {
+                _resendCountdown--;
+                InvokeAsync(StateHasChanged);
+            }
+            else
+            {
+                _countdownTimer?.Dispose();
+                _countdownTimer = null;
+            }
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    public void Dispose()
+    {
+        _countdownTimer?.Dispose();
+    }
+
+    private async Task Next()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            if (_activeIndex == 0)
+            {
+                _loadingMessage = "正在发送验证码...";
+                StateHasChanged();
+
+                var phoneNumber = _phone.StartsWith("+") ? _phone : $"+{_phone}";
+                _accountId = await AccountService.StartLoginAsync(phoneNumber, CancellationToken.None);
+                _activeIndex = 1;
+
+                // 重置验证码输入并启动倒计时
+                _codeDigits = new string[5];
+                StartResendCountdown();
+                return;
+            }
+
+            if (_activeIndex == 1)
+            {
+                _loadingMessage = "正在验证...";
+                StateHasChanged();
+
+                await AccountService.SubmitLoginCodeAsync(_accountId, _code, CancellationToken.None);
+                _activeIndex = 2;
+                return;
+            }
+
+            if (_activeIndex == 2)
+            {
+                if (!string.IsNullOrWhiteSpace(_password))
+                {
+                    _loadingMessage = "正在验证两步验证密码...";
+                    StateHasChanged();
+
+                    await AccountService.SubmitLoginPasswordAsync(_accountId, _password, CancellationToken.None);
+                }
+
+                MudDialog.Close(DialogResult.Ok(_accountId));
+            }
+        }
+        catch (ValidationException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

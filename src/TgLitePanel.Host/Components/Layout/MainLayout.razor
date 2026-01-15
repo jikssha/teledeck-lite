@@ -1,0 +1,259 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ITdClientManager TdClientManager
+@inject AppUpdateService AppUpdate
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@using TgLitePanel.Host.Services
+
+<MudThemeProvider IsDarkMode="true" Theme="@_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    @* 顶部栏 - 毛玻璃效果 *@
+    <MudAppBar Elevation="0" Class="teledeck-appbar">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       Edge="Edge.Start"
+                       OnClick="@ToggleDrawer" />
+
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Custom.Brands.Telegram" Size="Size.Medium" Class="me-2" Style="color: var(--mud-palette-primary);" />
+            <MudText Typo="Typo.h6" Class="teledeck-title">Teledeck</MudText>
+        </div>
+
+        <MudSpacer />
+
+        @* 全局搜索 *@
+        <MudIconButton Icon="@Icons.Material.Filled.Search"
+                       Color="Color.Inherit"
+                       title="全局搜索" />
+
+        @* 夜间模式切换（已是深色模式，保留占位） *@
+        <MudIconButton Icon="@Icons.Material.Filled.DarkMode"
+                       Color="Color.Inherit"
+                       title="深色模式" />
+
+        @* GitHub 与版本信息 *@
+        <MudTooltip Text="打开 GitHub 仓库">
+            <MudIconButton Icon="@AppIcons.GitHub"
+                           Color="Color.Inherit"
+                           Disabled="@string.IsNullOrWhiteSpace(_repoUrl)"
+                           OnClick="@OpenRepository" />
+        </MudTooltip>
+
+        <MudText Typo="Typo.caption" Class="me-2 mud-text-secondary">
+            v@_currentVersion
+        </MudText>
+
+        @if (_hasUpdate && !string.IsNullOrWhiteSpace(_latestVersionUrl))
+        {
+            <MudChip T="string"
+                     Size="Size.Small"
+                     Color="Color.Warning"
+                     Variant="Variant.Outlined"
+                     OnClick="@PromptOpenLatestAsync">
+                新版本 v@_latestVersion
+            </MudChip>
+        }
+
+        <AuthorizeView>
+            <Authorized>
+                <MudMenu Icon="@Icons.Material.Filled.AccountCircle"
+                         Color="Color.Inherit"
+                         AnchorOrigin="Origin.BottomRight"
+                         TransformOrigin="Origin.TopRight">
+                    <MudMenuItem>
+                        <div class="d-flex align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.Person" Class="me-2" />
+                            <MudText>@context.User.Identity?.Name</MudText>
+                        </div>
+                    </MudMenuItem>
+                    <MudDivider />
+                    <MudMenuItem Href="/settings" Icon="@Icons.Material.Filled.Settings">设置</MudMenuItem>
+                    <MudDivider />
+                    <MudMenuItem>
+                        <form method="post" action="/api/auth/logout" style="margin: 0;">
+                            <AntiforgeryToken />
+                            <MudButton ButtonType="ButtonType.Submit"
+                                       Variant="Variant.Text"
+                                       Color="Color.Error"
+                                       StartIcon="@Icons.Material.Filled.Logout"
+                                       FullWidth="true">
+                                退出登录
+                            </MudButton>
+                        </form>
+                    </MudMenuItem>
+                </MudMenu>
+            </Authorized>
+            <NotAuthorized>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Href="/login"
+                           StartIcon="@Icons.Material.Filled.Login">
+                    登录
+                </MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    @* 侧边栏 - 280px 宽度 *@
+    <MudDrawer @bind-Open="_drawerOpen"
+               Elevation="1"
+               Variant="DrawerVariant.Responsive"
+               ClipMode="DrawerClipMode.Always"
+               Width="280px"
+               Class="teledeck-drawer">
+        <div class="d-flex flex-column" style="height: 100%;">
+            <NavMenu />
+
+            @* 底部系统状态仪表盘 *@
+            <MudSpacer />
+            <div class="teledeck-system-status pa-3">
+                <MudDivider Class="mb-3" />
+                <div class="d-flex align-center justify-space-between mb-2">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">系统状态</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                        运行中
+                    </MudChip>
+                </div>
+                <div class="d-flex align-center mb-1">
+                    <MudIcon Icon="@Icons.Material.Filled.Memory" Size="Size.Small" Class="me-2" Color="Color.Secondary" />
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">活跃实例</MudText>
+                    <MudSpacer />
+                    <MudText Typo="Typo.body2" Color="Color.Primary">@_activeInstances / @_maxInstances</MudText>
+                </div>
+                <MudProgressLinear Value="@(_activeInstances * 100.0 / Math.Max(_maxInstances, 1))"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   Rounded="true"
+                                   Class="mt-2" />
+            </div>
+        </div>
+    </MudDrawer>
+
+    @* 主内容区域 *@
+    <MudMainContent Class="teledeck-main-content">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private int _activeInstances = 0;
+    private int _maxInstances = 50;
+
+    private string _currentVersion = "0.0.0";
+    private string? _latestVersion;
+    private bool _hasUpdate;
+    private string? _repoUrl;
+    private string? _latestVersionUrl;
+
+    /// <summary>
+    /// Telegram 官方配色主题 (Material Design 3 + 沉浸式深色模式)
+    /// </summary>
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            // 核心配色 - 基于 Telegram 官方蓝
+            Primary = "#2AABEE",           // Telegram Blue - 按钮、进度条、强调色
+            PrimaryDarken = "#2B5278",     // 发送消息气泡背景
+            PrimaryLighten = "#3DB8F5",    // 悬停状态
+
+            // 背景色系
+            Background = "#121212",         // 页面底层背景
+            Surface = "#1E1E1E",           // 卡片、侧边栏、对话框背景
+
+            // 状态色
+            Success = "#00C853",           // 账号在线、操作成功
+            Error = "#FF5252",             // 账号掉线、操作失败
+            Warning = "#FFB300",           // 警告状态
+            Info = "#2AABEE",              // 信息提示
+
+            // 文字色
+            TextPrimary = "#E0E0E0",       // 主要文字内容
+            TextSecondary = "#9E9E9E",     // 辅助文字、时间戳、版本号
+
+            // 组件背景
+            AppbarBackground = "#121212",
+            DrawerBackground = "#1E1E1E",
+
+            // 其他
+            ActionDefault = "#9E9E9E",
+            ActionDisabled = "#616161",
+            Divider = "#424242",
+            LinesDefault = "#424242"
+        },
+
+        // 排版配置
+        Typography = new Typography
+        {
+            Default = new Default
+            {
+                FontFamily = new[] { "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif" }
+            }
+        }
+    };
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    protected override void OnInitialized()
+    {
+        AppUpdate.Changed += OnUpdateStateChanged;
+        RefreshUpdateState();
+
+        // 这里可以获取实际的活跃实例数
+        // _activeInstances = TdClientManager.ActiveCount;
+    }
+
+    private void OnUpdateStateChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            RefreshUpdateState();
+            StateHasChanged();
+        });
+    }
+
+    private void RefreshUpdateState()
+    {
+        _currentVersion = AppUpdate.CurrentVersion;
+        _latestVersion = AppUpdate.LatestVersion;
+        _hasUpdate = AppUpdate.IsUpdateAvailable;
+        _repoUrl = AppUpdate.RepositoryUrl;
+        _latestVersionUrl = AppUpdate.LatestVersionUrl;
+    }
+
+    private void OpenRepository()
+    {
+        if (string.IsNullOrWhiteSpace(_repoUrl))
+            return;
+
+        Navigation.NavigateTo(_repoUrl, forceLoad: true);
+    }
+
+    private async Task PromptOpenLatestAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_latestVersionUrl))
+            return;
+
+        var ok = await DialogService.ShowMessageBox(
+            "发现新版本",
+            $"发现新版本 v{_latestVersion}，是否跳转到 GitHub 查看？",
+            yesText: "打开 GitHub",
+            cancelText: "取消");
+
+        if (ok == true)
+            Navigation.NavigateTo(_latestVersionUrl, forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        AppUpdate.Changed -= OnUpdateStateChanged;
+    }
+}

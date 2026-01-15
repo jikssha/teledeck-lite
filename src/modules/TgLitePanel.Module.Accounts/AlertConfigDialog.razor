@@ -1,0 +1,291 @@
+@inject IAlertConfigStore AlertConfigStore
+@inject IAccountStore AccountStore
+@inject IAccountGroupStore GroupStore
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.NotificationsActive" Class="mr-2" />
+            告警配置管理
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+            <MudTabPanel Text="告警规则" Icon="@Icons.Material.Filled.Rule">
+                @if (_loading)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                }
+                else
+                {
+                    <MudStack Spacing="4">
+                        @foreach (var config in _configs)
+                        {
+                            <MudCard Outlined="true">
+                                <MudCardContent>
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                        <MudStack Spacing="1">
+                                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                                <MudIcon Icon="@GetAlertTypeIcon(config.AlertType)"
+                                                         Color="@(config.IsEnabled ? Color.Primary : Color.Default)" />
+                                                <MudText Typo="Typo.subtitle1">@GetAlertTypeName(config.AlertType)</MudText>
+                                                <MudChip T="string" Size="Size.Small"
+                                                         Color="@(config.IsEnabled ? Color.Success : Color.Default)">
+                                                    @(config.IsEnabled ? "启用" : "禁用")
+                                                </MudChip>
+                                            </MudStack>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                阈值: @config.ConsecutiveFailureThreshold 次 | 冷却: @config.CooldownMinutes 分钟
+                                            </MudText>
+                                        </MudStack>
+                                        <MudStack Row="true" Spacing="1">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                           Size="Size.Small"
+                                                           OnClick="() => EditConfig(config)" />
+                                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                           Size="Size.Small"
+                                                           Color="Color.Error"
+                                                           OnClick="() => DeleteConfigAsync(config)" />
+                                        </MudStack>
+                                    </MudStack>
+                                </MudCardContent>
+                            </MudCard>
+                        }
+
+                        @if (_configs.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Info">
+                                暂无告警配置，请点击下方按钮添加
+                            </MudAlert>
+                        }
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="AddNewConfig"
+                                   FullWidth="true">
+                            添加告警规则
+                        </MudButton>
+                    </MudStack>
+                }
+            </MudTabPanel>
+            <MudTabPanel Text="编辑规则" Icon="@Icons.Material.Filled.Edit" Disabled="@(_editingConfig is null)">
+                @if (_editingConfig is not null)
+                {
+                    <MudStack Spacing="3">
+                        <MudSelect T="string"
+                                   Label="告警类型"
+                                   @bind-Value="_editAlertType"
+                                   Variant="Variant.Outlined">
+                            <MudSelectItem Value="@AlertTypes.AccountOffline">账号离线告警</MudSelectItem>
+                            <MudSelectItem Value="@AlertTypes.ConsecutiveFailures">连续失败告警</MudSelectItem>
+                        </MudSelect>
+
+                        <MudSwitch T="bool"
+                                   @bind-Value="_editIsEnabled"
+                                   Label="启用告警"
+                                   Color="Color.Primary" />
+
+                        <MudNumericField T="int"
+                                         @bind-Value="_editThreshold"
+                                         Label="连续失败阈值"
+                                         Min="1"
+                                         Max="100"
+                                         Variant="Variant.Outlined"
+                                         HelperText="连续失败多少次后触发告警" />
+
+                        <MudNumericField T="int"
+                                         @bind-Value="_editCooldown"
+                                         Label="冷却时间（分钟）"
+                                         Min="1"
+                                         Max="1440"
+                                         Variant="Variant.Outlined"
+                                         HelperText="同一告警在此时间内不会重复触发" />
+
+                        <MudSelect T="string"
+                                   Label="通知方式"
+                                   @bind-Value="_editNotifyMethod"
+                                   Variant="Variant.Outlined">
+                            <MudSelectItem Value="@("webhook")">Webhook</MudSelectItem>
+                            <MudSelectItem Value="@("telegram")">Telegram 通知</MudSelectItem>
+                            <MudSelectItem Value="@("both")">Webhook + Telegram</MudSelectItem>
+                        </MudSelect>
+
+                        <MudSelect T="long[]"
+                                   Label="适用分组（可选）"
+                                   MultiSelection="true"
+                                   @bind-Value="_editGroupIds"
+                                   ToStringFunc="@(ids => ids?.Length > 0 ? $"已选 {ids.Length} 个分组" : "全部分组")"
+                                   Variant="Variant.Outlined">
+                            @foreach (var group in _groups)
+                            {
+                                <MudSelectItem Value="@(new[] { group.Id })">@group.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+
+                        <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2">
+                            <MudButton Variant="Variant.Text" OnClick="CancelEdit">取消</MudButton>
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       OnClick="SaveConfigAsync"
+                                       Disabled="_saving">
+                                @if (_saving)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                }
+                                保存
+                            </MudButton>
+                        </MudStack>
+                    </MudStack>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">关闭</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private MudDialogInstance? MudDialog { get; set; }
+
+    private List<AlertConfig> _configs = new();
+    private List<AccountGroup> _groups = new();
+    private bool _loading = true;
+    private bool _saving = false;
+
+    private AlertConfig? _editingConfig;
+    private string _editAlertType = AlertTypes.AccountOffline;
+    private bool _editIsEnabled = true;
+    private int _editThreshold = 3;
+    private int _editCooldown = 30;
+    private string _editNotifyMethod = "webhook";
+    private long[]? _editGroupIds;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var configs = await AlertConfigStore.ListAsync(CancellationToken.None);
+            _configs = configs.ToList();
+
+            var groups = await GroupStore.ListAsync(CancellationToken.None);
+            _groups = groups.ToList();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void AddNewConfig()
+    {
+        _editingConfig = new AlertConfig
+        {
+            AlertType = AlertTypes.AccountOffline,
+            IsEnabled = true,
+            ConsecutiveFailureThreshold = 3,
+            CooldownMinutes = 30,
+            NotifyMethods = "webhook"
+        };
+        ResetEditFields(_editingConfig);
+    }
+
+    private void EditConfig(AlertConfig config)
+    {
+        _editingConfig = config;
+        ResetEditFields(config);
+    }
+
+    private void ResetEditFields(AlertConfig config)
+    {
+        _editAlertType = config.AlertType;
+        _editIsEnabled = config.IsEnabled;
+        _editThreshold = config.ConsecutiveFailureThreshold;
+        _editCooldown = config.CooldownMinutes;
+        _editNotifyMethod = config.NotifyMethods;
+        _editGroupIds = config.GroupIds;
+    }
+
+    private void CancelEdit()
+    {
+        _editingConfig = null;
+    }
+
+    private async Task SaveConfigAsync()
+    {
+        if (_editingConfig is null) return;
+
+        _saving = true;
+        try
+        {
+            var config = _editingConfig with
+            {
+                AlertType = _editAlertType,
+                IsEnabled = _editIsEnabled,
+                ConsecutiveFailureThreshold = _editThreshold,
+                CooldownMinutes = _editCooldown,
+                NotifyMethods = _editNotifyMethod,
+                GroupIds = _editGroupIds,
+                UpdatedAtUtc = DateTime.UtcNow
+            };
+
+            if (config.Id == 0)
+            {
+                config = config with { CreatedAtUtc = DateTime.UtcNow };
+            }
+
+            await AlertConfigStore.SaveAsync(config, CancellationToken.None);
+            Snackbar.Add("告警配置已保存", Severity.Success);
+
+            _editingConfig = null;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"保存失败：{ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteConfigAsync(AlertConfig config)
+    {
+        try
+        {
+            await AlertConfigStore.DeleteAsync(config.Id, CancellationToken.None);
+            Snackbar.Add("告警配置已删除", Severity.Success);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"删除失败：{ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string GetAlertTypeIcon(string alertType) => alertType switch
+    {
+        AlertTypes.AccountOffline => Icons.Material.Filled.CloudOff,
+        AlertTypes.ConsecutiveFailures => Icons.Material.Filled.ErrorOutline,
+        _ => Icons.Material.Filled.Notifications
+    };
+
+    private static string GetAlertTypeName(string alertType) => alertType switch
+    {
+        AlertTypes.AccountOffline => "账号离线告警",
+        AlertTypes.ConsecutiveFailures => "连续失败告警",
+        _ => alertType
+    };
+
+    private void Cancel() => MudDialog?.Cancel();
+}

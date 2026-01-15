@@ -1,0 +1,711 @@
+@page "/accounts"
+@attribute [Authorize]
+
+@inject IAccountService AccountService
+@inject IAccountHealthCheckService HealthCheckService
+@inject IAccountStatusLogStore StatusLogStore
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@inject IHttpClientFactory HttpClientFactory
+
+@implements IAsyncDisposable
+
+<PageTitle>账号管理 - Teledeck</PageTitle>
+
+<MudStack Spacing="4">
+    @* 页面头部 *@
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="flex-wrap gap-2">
+        <div>
+            <MudText Typo="Typo.h4" Class="mb-1">账号管理</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">管理您的 Telegram 账号</MudText>
+        </div>
+        <MudStack Row="true" Spacing="2" Class="flex-wrap">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       StartIcon="@Icons.Material.Filled.HealthAndSafety"
+                       OnClick="TriggerHealthCheck"
+                       Disabled="@_isCheckRunning">
+                @if (_isCheckRunning)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>检查中...</span>
+                }
+                else
+                {
+                    <span>健康检查</span>
+                }
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.Settings"
+                       OnClick="OpenAlertConfigDialog">
+                告警设置
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       Href="/api/accounts/export"
+                       Target="_blank">
+                导出全部
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenLoginWizard">
+                添加账号
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    @* 健康检查进度条 *@
+    @if (_checkProgress is not null && !_checkProgress.IsFinished)
+    {
+        <MudPaper Elevation="1" Class="pa-4">
+            <MudStack Spacing="2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.subtitle1">
+                        <MudIcon Icon="@Icons.Material.Filled.Sync" Class="mr-2" Style="vertical-align: middle;" />
+                        正在检查账号状态
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        @_checkProgress.Completed / @_checkProgress.Total
+                    </MudText>
+                </MudStack>
+                <MudProgressLinear Value="@GetProgressPercent()" Color="Color.Primary" Striped="true" />
+                @if (_checkProgress.CurrentAccountId > 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        当前检查：账号 ID @_checkProgress.CurrentAccountId
+                        @if (_checkProgress.IsOnline.HasValue)
+                        {
+                            <MudChip T="bool" Size="Size.Small" Class="ml-2"
+                                     Color="@(_checkProgress.IsOnline.Value ? Color.Success : Color.Error)">
+                                @(_checkProgress.IsOnline.Value ? "在线" : "离线")
+                            </MudChip>
+                        }
+                    </MudText>
+                }
+            </MudStack>
+        </MudPaper>
+    }
+
+    @* 批量操作栏 *@
+    @if (_selectedAccountIds.Count > 0)
+    {
+        <MudPaper Elevation="1" Class="pa-3 mud-theme-primary" Style="border-radius: 8px;">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                <MudText Typo="Typo.body1">
+                    已选择 <strong>@_selectedAccountIds.Count</strong> 个账号
+                </MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Inherit"
+                           StartIcon="@Icons.Material.Filled.HealthAndSafety"
+                           OnClick="CheckSelectedAccounts"
+                           Disabled="@_isCheckRunning">
+                    检查选中
+                </MudButton>
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Inherit"
+                           StartIcon="@Icons.Material.Filled.Close"
+                           OnClick="ClearSelection">
+                    取消选择
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+
+    @* 错误提示 *@
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error" CloseIconClicked="() => _error = null" ShowCloseIcon="true">
+            @_error
+        </MudAlert>
+    }
+
+    @* 导入区域 - 可折叠 *@
+    <MudExpansionPanel Text="导入账号（ZIP）" Icon="@Icons.Material.Filled.FileUpload">
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+            导入文件包含 TDLib 本地数据，用于重启后保持会话。
+        </MudText>
+        <form method="post" action="/api/accounts/import" enctype="multipart/form-data">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudButton HtmlTag="label"
+                           Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.AttachFile"
+                           for="importFileInput">
+                    选择文件
+                </MudButton>
+                <input type="file" name="file" accept=".zip" style="display: none;" id="importFileInput" />
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Upload">
+                    导入
+                </MudButton>
+            </MudStack>
+        </form>
+    </MudExpansionPanel>
+
+    @* 账号卡片流 *@
+    @if (_isLoading)
+    {
+        @* 骨架屏加载 *@
+        <MudGrid Spacing="3">
+            @for (var i = 0; i < 3; i++)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Class="account-card skeleton-card" Style="height: 180px;">
+                        <MudCardContent>
+                            <MudSkeleton SkeletonType="SkeletonType.Circle" Width="48px" Height="48px" />
+                            <MudSkeleton Width="60%" Class="mt-3" />
+                            <MudSkeleton Width="40%" Class="mt-2" />
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else if (_accounts.Count == 0)
+    {
+        @* 空状态 *@
+        <div class="empty-state">
+            <MudIcon Icon="@Icons.Material.Filled.CloudOff" Class="empty-state-icon" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary" Class="mb-2">暂无账号</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                开始添加您的第一个 Telegram 账号
+            </MudText>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenLoginWizard">
+                添加首个账号
+            </MudButton>
+        </div>
+    }
+    else
+    {
+        @* 全选控制 *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+            <MudCheckBox T="bool"
+                         Value="@IsAllSelected()"
+                         ValueChanged="@ToggleSelectAll"
+                         Color="Color.Primary"
+                         Label="全选" />
+            <MudSpacer />
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                共 @_accounts.Count 个账号
+            </MudText>
+        </MudStack>
+
+        @* 账号卡片网格 *@
+        <MudGrid Spacing="3">
+            @foreach (var account in _accounts)
+            {
+                var isSelected = _selectedAccountIds.Contains(account.Id);
+                var liveStatus = GetLiveStatus(account.Id);
+
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Class="@GetCardClass(account.Status, isSelected)" Elevation="2">
+                        <MudCardContent>
+                            @* 头部：选择框 + 头像 + 状态 *@
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-3">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudCheckBox T="bool"
+                                                 Value="@isSelected"
+                                                 ValueChanged="@(v => ToggleAccountSelection(account.Id, v))"
+                                                 Color="Color.Primary"
+                                                 Size="Size.Small" />
+                                    <MudAvatar Color="Color.Primary" Size="Size.Large">
+                                        <MudIcon Icon="@Icons.Material.Filled.Person" />
+                                    </MudAvatar>
+                                </MudStack>
+                                <MudStack AlignItems="AlignItems.End" Spacing="1">
+                                    <MudChip T="AccountStatus"
+                                             Color="@StatusColor(account.Status)"
+                                             Variant="Variant.Filled"
+                                             Size="Size.Small"
+                                             Icon="@StatusIcon(account.Status)">
+                                        @StatusText(account.Status)
+                                    </MudChip>
+                                    @if (liveStatus is not null)
+                                    {
+                                        <MudChip T="string"
+                                                 Color="@(liveStatus.IsOnline ? Color.Success : Color.Error)"
+                                                 Variant="Variant.Outlined"
+                                                 Size="Size.Small">
+                                            @(liveStatus.IsOnline ? "连通" : "离线")
+                                        </MudChip>
+                                    }
+                                </MudStack>
+                            </MudStack>
+
+                            @* 主体信息 *@
+                            <MudText Typo="Typo.h6" Class="mb-1">@account.Phone</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                ID: @account.Id
+                            </MudText>
+
+                            @* 数据点 *@
+                            <MudStack Row="true" Spacing="3" Class="mt-3">
+                                <div>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">最后检查</MudText>
+                                    <MudText Typo="Typo.body2">
+                                        @(liveStatus is not null ? FormatTime(liveStatus.CheckedAtUtc) : "-")
+                                    </MudText>
+                                </div>
+                                <div>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">状态</MudText>
+                                    <MudText Typo="Typo.body2">
+                                        @(liveStatus?.Error ?? "正常")
+                                    </MudText>
+                                </div>
+                            </MudStack>
+                        </MudCardContent>
+
+                        @* 底部操作栏 *@
+                        <MudCardActions>
+                            <MudIconButton Icon="@Icons.Material.Filled.History"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           OnClick="@(() => ShowStatusHistory(account))"
+                                           title="状态历史" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Notifications"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           Href="@($"/accounts/{account.Id}/system")"
+                                           title="系统通知" />
+                            <MudSpacer />
+                            <MudMenu Dense="true"
+                                     Icon="@Icons.Material.Filled.MoreVert"
+                                     AnchorOrigin="Origin.BottomRight"
+                                     TransformOrigin="Origin.TopRight">
+                                <MudMenuItem Icon="@Icons.Material.Filled.Refresh"
+                                             OnClick="@(() => CheckSingleAccount(account.Id))">
+                                    检查状态
+                                </MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.History"
+                                             OnClick="@(() => ShowStatusHistory(account))">
+                                    状态历史
+                                </MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Notifications"
+                                             Href="@($"/accounts/{account.Id}/system")">
+                                    系统通知
+                                </MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Chat"
+                                             Href="@($"/chat?account={account.Id}")">
+                                    进入聊天
+                                </MudMenuItem>
+                                <MudDivider />
+                                <MudMenuItem Icon="@Icons.Material.Filled.FileDownload"
+                                             Href="@($"/api/accounts/{account.Id}/export")"
+                                             Target="_blank">
+                                    导出 ZIP
+                                </MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.VpnKey"
+                                             OnClick="@(() => Show2FADialog(account))">
+                                    2FA 设置
+                                </MudMenuItem>
+                                <MudDivider />
+                                <MudMenuItem Icon="@Icons.Material.Filled.Delete"
+                                             IconColor="Color.Error"
+                                             OnClick="@(() => ConfirmDelete(account))">
+                                    删除账号
+                                </MudMenuItem>
+                            </MudMenu>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudStack>
+
+@code {
+    private List<AccountDto> _accounts = new();
+    private bool _isLoading = true;
+    private bool _isCheckRunning;
+    private HealthCheckProgressEvent? _checkProgress;
+    private HashSet<long> _selectedAccountIds = new();
+    private Dictionary<long, AccountStatusLog> _liveStatusMap = new();
+    private Microsoft.AspNetCore.SignalR.Client.HubConnection? _hubConnection;
+
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _error = string.IsNullOrWhiteSpace(Error) ? null : Error;
+        await ReloadAsync();
+        await InitializeSignalR();
+        await LoadLatestStatusAsync();
+
+        // 检查是否有正在进行的检查
+        _checkProgress = HealthCheckService.GetCurrentProgress();
+        _isCheckRunning = HealthCheckService.IsRunning;
+    }
+
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            _hubConnection = new Microsoft.AspNetCore.SignalR.Client.HubConnectionBuilder()
+                .WithUrl(Navigation.ToAbsoluteUri("/hubs/telegram"))
+                .WithAutomaticReconnect()
+                .Build();
+
+            // 订阅健康检查进度
+            _hubConnection.On<HealthCheckProgressEvent>("HealthCheckProgress", async (progress) =>
+            {
+                _checkProgress = progress;
+                _isCheckRunning = !progress.IsFinished;
+
+                if (progress.IsFinished)
+                {
+                    await LoadLatestStatusAsync();
+                    Snackbar.Add($"健康检查完成，共检查 {progress.Total} 个账号", Severity.Success);
+                }
+
+                await InvokeAsync(StateHasChanged);
+            });
+
+            // 订阅账号状态变更
+            _hubConnection.On<AccountStatusEvent>("AccountStatusChanged", async (status) =>
+            {
+                if (_liveStatusMap.ContainsKey(status.AccountId))
+                {
+                    _liveStatusMap[status.AccountId] = new AccountStatusLog
+                    {
+                        AccountId = status.AccountId,
+                        IsOnline = status.IsOnline,
+                        Error = status.Error,
+                        CheckedAtUtc = DateTime.UtcNow
+                    };
+                }
+                else
+                {
+                    _liveStatusMap[status.AccountId] = new AccountStatusLog
+                    {
+                        AccountId = status.AccountId,
+                        IsOnline = status.IsOnline,
+                        Error = status.Error,
+                        CheckedAtUtc = DateTime.UtcNow
+                    };
+                }
+
+                await InvokeAsync(StateHasChanged);
+            });
+
+            // 订阅告警
+            _hubConnection.On<AlertTriggeredEvent>("AlertTriggered", async (alert) =>
+            {
+                Snackbar.Add($"告警: {alert.Message}", Severity.Warning);
+                await InvokeAsync(StateHasChanged);
+            });
+
+            await _hubConnection.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR 连接失败: {ex.Message}");
+        }
+    }
+
+    private async Task LoadLatestStatusAsync()
+    {
+        try
+        {
+            var latest = await StatusLogStore.GetLatestForAllAsync(CancellationToken.None);
+            _liveStatusMap = latest.ToDictionary(x => x.Key, x => x.Value);
+        }
+        catch
+        {
+            // 忽略加载错误
+        }
+    }
+
+    private AccountStatusLog? GetLiveStatus(long accountId)
+    {
+        return _liveStatusMap.TryGetValue(accountId, out var status) ? status : null;
+    }
+
+    private double GetProgressPercent()
+    {
+        if (_checkProgress is null || _checkProgress.Total == 0)
+            return 0;
+        return (double)_checkProgress.Completed / _checkProgress.Total * 100;
+    }
+
+    private async Task ReloadAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var list = await AccountService.ListAsync(CancellationToken.None);
+            _accounts = list.ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"加载账号列表失败：{ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TriggerHealthCheck()
+    {
+        if (_isCheckRunning)
+            return;
+
+        try
+        {
+            _isCheckRunning = true;
+            StateHasChanged();
+
+            await HealthCheckService.TriggerCheckAsync(new HealthCheckRequest { Source = "manual" }, CancellationToken.None);
+            Snackbar.Add("已触发健康检查", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"触发检查失败: {ex.Message}", Severity.Error);
+            _isCheckRunning = false;
+        }
+    }
+
+    private async Task CheckSelectedAccounts()
+    {
+        if (_isCheckRunning || _selectedAccountIds.Count == 0)
+            return;
+
+        try
+        {
+            _isCheckRunning = true;
+            StateHasChanged();
+
+            var request = new HealthCheckRequest
+            {
+                AccountIds = _selectedAccountIds.ToArray(),
+                Source = "manual"
+            };
+            await HealthCheckService.TriggerCheckAsync(request, CancellationToken.None);
+            Snackbar.Add($"已触发 {_selectedAccountIds.Count} 个账号的健康检查", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"触发检查失败: {ex.Message}", Severity.Error);
+            _isCheckRunning = false;
+        }
+    }
+
+    private async Task CheckSingleAccount(long accountId)
+    {
+        if (_isCheckRunning)
+        {
+            Snackbar.Add("已有检查任务正在运行", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            _isCheckRunning = true;
+            StateHasChanged();
+
+            var request = new HealthCheckRequest
+            {
+                AccountIds = new[] { accountId },
+                Source = "manual"
+            };
+            await HealthCheckService.TriggerCheckAsync(request, CancellationToken.None);
+            Snackbar.Add("已触发状态检查", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"触发检查失败: {ex.Message}", Severity.Error);
+            _isCheckRunning = false;
+        }
+    }
+
+    private async Task ShowStatusHistory(AccountDto account)
+    {
+        var parameters = new DialogParameters<StatusHistoryDialog>
+        {
+            { x => x.AccountId, account.Id }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true
+        };
+
+        await DialogService.ShowAsync<StatusHistoryDialog>($"状态历史 - {account.Phone}", parameters, options);
+    }
+
+    private async Task OpenAlertConfigDialog()
+    {
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true
+        };
+
+        await DialogService.ShowAsync<AlertConfigDialog>("告警配置", options);
+    }
+
+    private bool IsAllSelected()
+    {
+        return _accounts.Count > 0 && _selectedAccountIds.Count == _accounts.Count;
+    }
+
+    private void ToggleSelectAll(bool selectAll)
+    {
+        if (selectAll)
+        {
+            _selectedAccountIds = _accounts.Select(a => a.Id).ToHashSet();
+        }
+        else
+        {
+            _selectedAccountIds.Clear();
+        }
+    }
+
+    private void ToggleAccountSelection(long accountId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            _selectedAccountIds.Add(accountId);
+        }
+        else
+        {
+            _selectedAccountIds.Remove(accountId);
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selectedAccountIds.Clear();
+    }
+
+    private async Task OpenLoginWizard()
+    {
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+
+        var dialog = await DialogService.ShowAsync<LoginWizardDialog>("接码登录向导", options);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            Snackbar.Add("账号添加成功！", Severity.Success);
+            await ReloadAsync();
+        }
+    }
+
+    private string GetCardClass(AccountStatus status, bool isSelected)
+    {
+        var baseClass = "account-card";
+        if (isSelected)
+            baseClass += " selected";
+        if (status == AccountStatus.Authorizing)
+            baseClass += " acquiring";
+        return baseClass;
+    }
+
+    private static Color StatusColor(AccountStatus status)
+        => status switch
+        {
+            AccountStatus.Ready => Color.Success,
+            AccountStatus.Authorizing => Color.Warning,
+            AccountStatus.NeedRelogin => Color.Error,
+            _ => Color.Default
+        };
+
+    private static string StatusIcon(AccountStatus status)
+        => status switch
+        {
+            AccountStatus.Ready => Icons.Material.Filled.CheckCircle,
+            AccountStatus.Authorizing => Icons.Material.Filled.HourglassTop,
+            AccountStatus.NeedRelogin => Icons.Material.Filled.Warning,
+            _ => Icons.Material.Filled.Help
+        };
+
+    private static string StatusText(AccountStatus status)
+        => status switch
+        {
+            AccountStatus.Ready => "在线",
+            AccountStatus.Authorizing => "验证中",
+            AccountStatus.NeedRelogin => "需重登",
+            _ => "未知"
+        };
+
+    private static string FormatTime(DateTime utcTime)
+    {
+        var local = utcTime.ToLocalTime();
+        var diff = DateTime.Now - local;
+
+        if (diff.TotalMinutes < 1) return "刚刚";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes} 分钟前";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours} 小时前";
+        return local.ToString("MM-dd HH:mm");
+    }
+
+    private void Show2FADialog(AccountDto account)
+    {
+        Snackbar.Add("2FA 设置功能即将推出", Severity.Info);
+    }
+
+    private async Task ConfirmDelete(AccountDto account)
+    {
+        var result = await DialogService.ShowMessageBox(
+            "确认删除",
+            $"确定要删除账号 {account.Phone} 吗？此操作不可恢复。",
+            yesText: "删除",
+            cancelText: "取消");
+
+        if (result == true)
+        {
+            Snackbar.Add("删除功能即将实现", Severity.Warning);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}
+
+// 简化的事件类型定义（用于 SignalR）
+public sealed class AccountStatusEvent
+{
+    public long AccountId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public bool IsOnline { get; set; }
+    public string? Error { get; set; }
+}
+
+public sealed class AlertTriggeredEvent
+{
+    public long? AccountId { get; set; }
+    public string AlertType { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public DateTime TriggeredAtUtc { get; set; }
+}

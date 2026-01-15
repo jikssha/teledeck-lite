@@ -1,0 +1,176 @@
+@page "/accounts/{AccountId:long}/system"
+@attribute [Authorize]
+@implements IAsyncDisposable
+
+@inject ITdClientManager TdClientManager
+@inject ISharedCodeStore SharedCodeStore
+
+<PageTitle>系统通知</PageTitle>
+
+<MudStack Spacing="2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.h5">系统通知</MudText>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RefreshAsync" Disabled="_busy">刷新</MudButton>
+    </MudStack>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <MudAlert Severity="Severity.Error">@_error</MudAlert>
+    }
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudText Typo="Typo.subtitle1">最新验证码</MudText>
+        @if (_busy)
+        {
+            <MudProgressCircular Indeterminate="true" Class="mt-3" />
+        }
+        else if (string.IsNullOrWhiteSpace(_latestCode))
+        {
+            <MudText Typo="Typo.body2" Class="mt-2">未找到验证码（请确认该账号近期收到了 Telegram 登录/安全通知）。</MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.h3" Class="mt-3">@_latestCode</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="GenerateShareAsync">生成外链</MudButton>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_shareUrl))
+        {
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle1">外链</MudText>
+            <MudText Typo="Typo.body2" Class="mt-2">@_shareUrl</MudText>
+        }
+    </MudPaper>
+</MudStack>
+
+@code {
+    [Parameter] public long AccountId { get; set; }
+
+    private TdClientLease? _lease;
+    private bool _busy;
+    private string? _error;
+    private string? _latestCode;
+    private string? _shareUrl;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _lease = await TdClientManager.AcquireAsync(AccountId, CancellationToken.None);
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_lease is null)
+            return;
+
+        _error = null;
+        _shareUrl = null;
+        _busy = true;
+        try
+        {
+            _latestCode = await FindOtpAsync(_lease.Client, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task GenerateShareAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_latestCode))
+            return;
+
+        var shared = await SharedCodeStore.CreateAsync(AccountId, _latestCode, DateTimeOffset.UtcNow.AddMinutes(10), CancellationToken.None);
+        _shareUrl = $"/share/code/{shared.Token}";
+    }
+
+    private static async Task<string?> FindOtpAsync(ITdClient client, CancellationToken cancellationToken)
+    {
+        var json = await client.ExecuteAsync(new JsonObject
+        {
+            ["@type"] = "searchChats",
+            ["query"] = "Telegram",
+            ["limit"] = 10
+        }.ToJsonString(), TimeSpan.FromSeconds(15), cancellationToken);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        ThrowIfError(doc.RootElement);
+
+        if (!doc.RootElement.TryGetProperty("chat_ids", out var ids) || ids.ValueKind != System.Text.Json.JsonValueKind.Array)
+            return null;
+
+        var regex = new System.Text.RegularExpressions.Regex(@"\b\d{4,8}\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        foreach (var idEl in ids.EnumerateArray())
+        {
+            if (!idEl.TryGetInt64(out var chatId))
+                continue;
+
+            var historyJson = await client.ExecuteAsync(new JsonObject
+            {
+                ["@type"] = "getChatHistory",
+                ["chat_id"] = chatId,
+                ["from_message_id"] = 0,
+                ["offset"] = 0,
+                ["limit"] = 50
+            }.ToJsonString(), TimeSpan.FromSeconds(15), cancellationToken);
+
+            using var historyDoc = System.Text.Json.JsonDocument.Parse(historyJson);
+            ThrowIfError(historyDoc.RootElement);
+
+            if (!historyDoc.RootElement.TryGetProperty("messages", out var messages) || messages.ValueKind != System.Text.Json.JsonValueKind.Array)
+                continue;
+
+            foreach (var msg in messages.EnumerateArray())
+            {
+                if (!TryExtractText(msg, out var text))
+                    continue;
+
+                var match = regex.Match(text);
+                if (match.Success)
+                    return match.Value;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryExtractText(System.Text.Json.JsonElement message, out string text)
+    {
+        text = "";
+        if (!message.TryGetProperty("content", out var content))
+            return false;
+
+        if (!content.TryGetProperty("@type", out var typeEl))
+            return false;
+
+        if (typeEl.GetString() != "messageText")
+            return false;
+
+        if (!content.TryGetProperty("text", out var t) || !t.TryGetProperty("text", out var tt))
+            return false;
+
+        text = tt.GetString() ?? "";
+        return !string.IsNullOrWhiteSpace(text);
+    }
+
+    private static void ThrowIfError(System.Text.Json.JsonElement root)
+    {
+        if (root.TryGetProperty("@type", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.String && t.GetString() == "error")
+        {
+            var msg = root.TryGetProperty("message", out var m) ? m.GetString() : "TDLib 返回错误";
+            throw new InvalidOperationException(msg);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_lease is not null)
+            await _lease.DisposeAsync();
+    }
+}

@@ -1,0 +1,40 @@
+@page "/"
+@attribute [Authorize]
+
+@inject IAppConfigService AppConfigService
+@inject IAccountService AccountService
+
+<PageTitle>首页</PageTitle>
+
+<MudText Typo="Typo.h5">概览</MudText>
+
+<MudGrid Class="mt-4">
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.subtitle1">Telegram API 配置</MudText>
+            <MudText Typo="Typo.body2" Class="mt-2">@_configText</MudText>
+            <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" Href="/settings">去设置</MudButton>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.subtitle1">账号</MudText>
+            <MudText Typo="Typo.body2" Class="mt-2">已录入账号数：@_accountsCount</MudText>
+            <MudButton Class="mt-3" Variant="Variant.Filled" Color="Color.Primary" Href="/accounts">去管理</MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _configText = "加载中…";
+    private int _accountsCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var cfg = await AppConfigService.GetTelegramApiConfigAsync(CancellationToken.None);
+        _configText = cfg is null ? "未配置（添加账号前必须先配置）" : "已配置";
+
+        var accounts = await AccountService.ListAsync(CancellationToken.None);
+        _accountsCount = accounts.Count;
+    }
+}

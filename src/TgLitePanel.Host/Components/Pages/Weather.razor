@@ -1,0 +1,41 @@
+@page "/share/code/{Token}"
+
+@inject ISystemNotificationService SystemNotificationService
+
+<PageTitle>验证码分享</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-12">
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudText Typo="Typo.h6">验证码</MudText>
+
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" Class="mt-4" />
+        }
+        else if (_code is null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-4">链接无效或已过期</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.h3" Class="mt-4">@_code</MudText>
+            <MudText Typo="Typo.body2" Class="mt-2">有效期至：@_expiresAtLocal</MudText>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [Parameter] public string Token { get; set; } = string.Empty;
+
+    private bool _loading = true;
+    private string? _code;
+    private string? _expiresAtLocal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var shared = await SystemNotificationService.GetSharedCodeAsync(Token, CancellationToken.None);
+        _code = shared?.Code;
+        _expiresAtLocal = shared is null ? null : shared.ExpiresAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        _loading = false;
+    }
+}

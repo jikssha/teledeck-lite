@@ -1,0 +1,241 @@
+@inject IModuleManager ModuleManager
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Upload" Class="mr-2" Style="vertical-align: middle;" />
+            上传扩展模块
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudAlert Severity="Severity.Info" Dense="true">
+                上传 ZIP 格式的模块包，包内需包含 manifest.json 清单文件。
+            </MudAlert>
+
+            <MudFileUpload T="IBrowserFile" Accept=".zip" FilesChanged="OnFileSelected" MaximumFileCount="1">
+                <ActivatorContent>
+                    <MudPaper Height="150px" Class="d-flex align-center justify-center mud-border-primary" Style="border: 2px dashed;" Outlined="true">
+                        @if (_selectedFile == null)
+                        {
+                            <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
+                                <MudText>点击或拖放 ZIP 文件到此处</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">最大 50MB</MudText>
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.InsertDriveFile" Size="Size.Large" Color="Color.Success" />
+                                <MudText>@_selectedFile.Name</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@FormatSize(_selectedFile.Size)</MudText>
+                            </MudStack>
+                        }
+                    </MudPaper>
+                </ActivatorContent>
+            </MudFileUpload>
+
+            @if (_validating)
+            {
+                <MudProgressLinear Indeterminate="true" />
+                <MudText Typo="Typo.body2">正在验证模块...</MudText>
+            }
+
+            @if (_validationResult != null)
+            {
+                @if (_validationResult.IsValid)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true">
+                        模块验证通过
+                    </MudAlert>
+
+                    <MudPaper Class="pa-3" Elevation="1">
+                        <MudStack Spacing="2">
+                            <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.subtitle2">模块名称</MudText>
+                                <MudText>@_validationResult.Manifest?.Name</MudText>
+                            </MudStack>
+                            <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.subtitle2">模块 ID</MudText>
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">@_validationResult.Manifest?.Id</MudText>
+                            </MudStack>
+                            <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.subtitle2">版本</MudText>
+                                <MudText>v@_validationResult.Manifest?.Version</MudText>
+                            </MudStack>
+                            @if (!string.IsNullOrEmpty(_validationResult.Manifest?.Description))
+                            {
+                                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.subtitle2">描述</MudText>
+                                    <MudText Typo="Typo.body2">@_validationResult.Manifest?.Description</MudText>
+                                </MudStack>
+                            }
+                            @if (_validationResult.Manifest?.Permissions?.Any() == true)
+                            {
+                                <MudDivider />
+                                <MudText Typo="Typo.subtitle2">请求的权限</MudText>
+                                @foreach (var perm in _validationResult.Manifest.Permissions)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="GetPermissionColor(perm)">
+                                        @ModulePermissions.GetDescription(perm)
+                                    </MudChip>
+                                }
+                            }
+                        </MudStack>
+                    </MudPaper>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">
+                        模块验证失败
+                    </MudAlert>
+
+                    @if (_validationResult.Errors?.Any() == true)
+                    {
+                        <MudList T="string" Dense="true">
+                            @foreach (var error in _validationResult.Errors)
+                            {
+                                <MudListItem Icon="@Icons.Material.Filled.Error" IconColor="Color.Error">
+                                    @error
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                }
+
+                @if (_validationResult.Warnings?.Any() == true)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">警告</MudAlert>
+                    <MudList T="string" Dense="true">
+                        @foreach (var warning in _validationResult.Warnings)
+                        {
+                            <MudListItem Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">
+                                @warning
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            }
+
+            @if (_installing)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                <MudText Typo="Typo.body2">正在安装模块...</MudText>
+            }
+
+            @if (!string.IsNullOrEmpty(_installError))
+            {
+                <MudAlert Severity="Severity.Error">@_installError</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="_installing">取消</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="InstallAsync"
+                   Disabled="@(!CanInstall)">
+            安装模块
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    private IBrowserFile? _selectedFile;
+    private MemoryStream? _fileStream;
+    private bool _validating;
+    private bool _installing;
+    private ModuleValidationResult? _validationResult;
+    private string? _installError;
+
+    private bool CanInstall => _validationResult?.IsValid == true && !_installing && !_validating;
+
+    private async Task OnFileSelected(IBrowserFile file)
+    {
+        _selectedFile = file;
+        _validationResult = null;
+        _installError = null;
+        _validating = true;
+
+        try
+        {
+            // 读取文件到内存
+            _fileStream?.Dispose();
+            _fileStream = new MemoryStream();
+            await file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024).CopyToAsync(_fileStream);
+            _fileStream.Position = 0;
+
+            // 验证模块
+            _validationResult = await ModuleManager.ValidateModuleAsync(_fileStream);
+        }
+        catch (Exception ex)
+        {
+            _validationResult = new ModuleValidationResult(false, null, new List<string> { ex.Message });
+        }
+        finally
+        {
+            _validating = false;
+        }
+    }
+
+    private async Task InstallAsync()
+    {
+        if (_fileStream == null || !CanInstall)
+            return;
+
+        _installing = true;
+        _installError = null;
+
+        try
+        {
+            _fileStream.Position = 0;
+            var result = await ModuleManager.InstallModuleAsync(_fileStream);
+
+            if (result.Success)
+            {
+                MudDialog.Close(DialogResult.Ok(result.Module));
+            }
+            else
+            {
+                _installError = string.Join("\n", result.Errors ?? new List<string> { "安装失败" });
+            }
+        }
+        catch (Exception ex)
+        {
+            _installError = ex.Message;
+        }
+        finally
+        {
+            _installing = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        _fileStream?.Dispose();
+        MudDialog.Cancel();
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / 1024.0 / 1024.0:F1} MB";
+    }
+
+    private static Color GetPermissionColor(string permission)
+    {
+        if (!ModulePermissions.All.TryGetValue(permission, out var info))
+            return Color.Default;
+
+        return info.Level switch
+        {
+            PermissionLevel.Low => Color.Success,
+            PermissionLevel.Medium => Color.Warning,
+            PermissionLevel.High => Color.Error,
+            _ => Color.Default
+        };
+    }
+}

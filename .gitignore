@@ -1,0 +1,18 @@
+**/bin/
+**/obj/
+.vs/
+
+*.user
+*.suo
+*.log
+.env
+docker/.env
+
+data/*
+!data/.gitkeep
+
+artifacts/
+
+.serena/
+
+ .serena/

@@ -1,0 +1,81 @@
+@using TgLitePanel.Core.Abstractions.Security
+@using TgLitePanel.Core.Abstractions.Modules
+@inject IModuleManager ModuleManager
+
+<div class="nav-menu-container">
+    <MudNavMenu Bordered="true" Color="Color.Primary" Class="pa-2">
+        <MudNavLink Href="/"
+                    Match="NavLinkMatch.All"
+                    Icon="@Icons.Material.Filled.Dashboard">
+            控制台
+        </MudNavLink>
+
+        <MudNavLink Href="/accounts"
+                    Icon="@Icons.Material.Filled.SupervisedUserCircle">
+            账号管理
+        </MudNavLink>
+
+        <MudNavLink Href="/chat"
+                    Icon="@Icons.Material.Filled.Forum">
+            消息中心
+        </MudNavLink>
+
+        @* 动态模块菜单项 *@
+        @{
+            var moduleMenuItems = ModuleManager.GetModuleMenuItems();
+        }
+        @if (moduleMenuItems.Any())
+        {
+            <MudDivider Class="my-2" />
+            <MudText Typo="Typo.caption" Class="px-4 mud-text-secondary">扩展模块</MudText>
+            @foreach (var item in moduleMenuItems)
+            {
+                <MudNavLink Href="@item.Href"
+                            Icon="@(item.Icon ?? Icons.Material.Filled.Extension)">
+                    @item.Title
+                </MudNavLink>
+            }
+        }
+
+        <MudDivider Class="my-2" />
+
+        <MudNavLink Href="/settings"
+                    Icon="@Icons.Material.Filled.Tune">
+            系统设置
+        </MudNavLink>
+
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <MudNavLink Href="/admin/modules"
+                            Icon="@Icons.Material.Filled.Extension">
+                    模块管理
+                </MudNavLink>
+            </Authorized>
+        </AuthorizeView>
+    </MudNavMenu>
+</div>
+
+<style>
+    .nav-menu-container {
+        padding: 8px 0;
+    }
+
+    .nav-menu-container .mud-nav-link {
+        border-radius: 8px;
+        margin: 2px 8px;
+        transition: all 0.2s ease;
+    }
+
+    .nav-menu-container .mud-nav-link:hover {
+        background-color: rgba(42, 171, 238, 0.08);
+    }
+
+    .nav-menu-container .mud-nav-link.active {
+        background-color: rgba(42, 171, 238, 0.15);
+        color: var(--mud-palette-primary);
+    }
+
+    .nav-menu-container .mud-nav-link .mud-nav-link-icon {
+        margin-right: 12px;
+    }
+</style>

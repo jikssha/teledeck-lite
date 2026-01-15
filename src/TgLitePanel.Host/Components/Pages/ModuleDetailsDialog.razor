@@ -1,0 +1,175 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Extension" Class="mr-2" Style="vertical-align: middle;" />
+            模块详情
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">模块名称</MudText>
+                    <MudText Typo="Typo.body1">@Module.Name</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">模块 ID</MudText>
+                    <MudText Typo="Typo.body2">@Module.Id</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">版本</MudText>
+                    <MudText Typo="Typo.body1">v@Module.Version</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">状态</MudText>
+                    @switch (Module.Status)
+                    {
+                        case ModuleStatus.Enabled:
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">已启用</MudChip>
+                            break;
+                        case ModuleStatus.Disabled:
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">已禁用</MudChip>
+                            break;
+                        case ModuleStatus.Error:
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error">加载错误</MudChip>
+                            break;
+                    }
+                </MudItem>
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(Module.Description))
+            {
+                <MudDivider />
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">描述</MudText>
+                    <MudText Typo="Typo.body2">@Module.Description</MudText>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(Module.AuthorName))
+            {
+                <div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">作者</MudText>
+                    <MudText Typo="Typo.body2">
+                        @Module.AuthorName
+                        @if (!string.IsNullOrEmpty(Module.AuthorEmail))
+                        {
+                            <text> (@Module.AuthorEmail)</text>
+                        }
+                    </MudText>
+                </div>
+            }
+
+            <MudDivider />
+
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">安装时间</MudText>
+                    <MudText Typo="Typo.body2">@Module.InstalledAt.ToString("yyyy-MM-dd HH:mm:ss")</MudText>
+                </MudItem>
+                @if (Module.LastLoadedAt.HasValue)
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">最后加载时间</MudText>
+                        <MudText Typo="Typo.body2">@Module.LastLoadedAt.Value.ToString("yyyy-MM-dd HH:mm:ss")</MudText>
+                    </MudItem>
+                }
+                @if (!string.IsNullOrEmpty(Module.InstalledBy))
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">安装者</MudText>
+                        <MudText Typo="Typo.body2">@Module.InstalledBy</MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+
+            @if (Module.Permissions.Any())
+            {
+                <MudDivider />
+                <MudText Typo="Typo.subtitle2">权限列表</MudText>
+                <MudStack Row="true" Spacing="1" Style="flex-wrap: wrap;">
+                    @foreach (var perm in Module.Permissions)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="GetPermissionColor(perm)">
+                            @ModulePermissions.GetDescription(perm)
+                        </MudChip>
+                    }
+                </MudStack>
+            }
+
+            @if (Module.Routes.Any())
+            {
+                <MudDivider />
+                <MudText Typo="Typo.subtitle2">提供的路由</MudText>
+                <MudSimpleTable Dense="true" Striped="true">
+                    <thead>
+                        <tr>
+                            <th>路径</th>
+                            <th>标题</th>
+                            <th>导航菜单</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var route in Module.Routes)
+                        {
+                            <tr>
+                                <td><code>@route.Path</code></td>
+                                <td>@route.Title</td>
+                                <td>
+                                    @if (route.ShowInNav)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success" />
+                                    }
+                                    else
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.Remove" Size="Size.Small" Color="Color.Default" />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+
+            @if (Module.Status == ModuleStatus.Error && !string.IsNullOrEmpty(Module.ErrorMessage))
+            {
+                <MudDivider />
+                <MudAlert Severity="Severity.Error">
+                    <MudText Typo="Typo.subtitle2">错误信息</MudText>
+                    <MudText Typo="Typo.body2" Style="white-space: pre-wrap;">@Module.ErrorMessage</MudText>
+                </MudAlert>
+            }
+
+            <MudDivider />
+            <div>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">校验和 (SHA-256)</MudText>
+                <MudText Typo="Typo.body2" Style="font-family: monospace; word-break: break-all;">@Module.Checksum</MudText>
+            </div>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">关闭</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public ModuleInfo Module { get; set; } = null!;
+
+    private void Close() => MudDialog.Close();
+
+    private static Color GetPermissionColor(string permission)
+    {
+        if (!ModulePermissions.All.TryGetValue(permission, out var info))
+            return Color.Default;
+
+        return info.Level switch
+        {
+            PermissionLevel.Low => Color.Success,
+            PermissionLevel.Medium => Color.Warning,
+            PermissionLevel.High => Color.Error,
+            _ => Color.Default
+        };
+    }
+}

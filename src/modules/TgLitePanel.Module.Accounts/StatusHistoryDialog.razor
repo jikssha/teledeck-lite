@@ -1,0 +1,150 @@
+@inject IAccountStatusLogStore StatusLogStore
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" />
+            状态历史记录
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (_logs.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="my-4">暂无状态检查记录</MudAlert>
+        }
+        else
+        {
+            <MudTimeline TimelinePosition="TimelinePosition.Start" Class="my-4">
+                @foreach (var log in _logs)
+                {
+                    <MudTimelineItem Color="@(log.IsOnline ? Color.Success : Color.Error)"
+                                     Size="Size.Small"
+                                     Elevation="0">
+                        <ItemOpposite>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @log.CheckedAtUtc.ToLocalTime().ToString("MM-dd HH:mm:ss")
+                            </MudText>
+                        </ItemOpposite>
+                        <ItemContent>
+                            <MudCard Outlined="true" Class="pa-2">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudIcon Icon="@(log.IsOnline ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)"
+                                             Color="@(log.IsOnline ? Color.Success : Color.Error)"
+                                             Size="Size.Small" />
+                                    <MudText Typo="Typo.body2">
+                                        @(log.IsOnline ? "在线" : "离线")
+                                    </MudText>
+                                    <MudChip T="string" Size="Size.Small" Color="@(log.Source == "manual" ? Color.Info : Color.Default)">
+                                        @(log.Source == "manual" ? "手动" : "自动")
+                                    </MudChip>
+                                </MudStack>
+                                @if (!string.IsNullOrEmpty(log.Error))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Error" Class="mt-1">
+                                        @log.Error
+                                    </MudText>
+                                }
+                            </MudCard>
+                        </ItemContent>
+                    </MudTimelineItem>
+                }
+            </MudTimeline>
+
+            @if (_logs.Count >= _limit)
+            {
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           FullWidth="true"
+                           OnClick="LoadMoreAsync"
+                           Disabled="_loadingMore">
+                    @if (_loadingMore)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    加载更多
+                </MudButton>
+            }
+        }
+
+        <MudDivider Class="my-4" />
+
+        <MudStack Row="true" Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                统计：在线 @_onlineCount 次 / 离线 @_offlineCount 次
+            </MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                在线率：@(_totalCount > 0 ? (_onlineCount * 100.0 / _totalCount).ToString("F1") : "0")%
+            </MudText>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">关闭</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private MudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public long AccountId { get; set; }
+
+    private List<AccountStatusLog> _logs = new();
+    private bool _loading = true;
+    private bool _loadingMore = false;
+    private int _limit = 50;
+    private int _offset = 0;
+
+    private int _onlineCount = 0;
+    private int _offlineCount = 0;
+    private int _totalCount = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogsAsync();
+    }
+
+    private async Task LoadLogsAsync()
+    {
+        _loading = true;
+        try
+        {
+            var logs = await StatusLogStore.GetByAccountAsync(AccountId, _limit, CancellationToken.None);
+            _logs = logs.ToList();
+            UpdateStats();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _loadingMore = true;
+        try
+        {
+            _offset += _limit;
+            var moreLogs = await StatusLogStore.GetByAccountAsync(AccountId, _limit, CancellationToken.None);
+            _logs.AddRange(moreLogs.Skip(_offset).Take(_limit));
+            UpdateStats();
+        }
+        finally
+        {
+            _loadingMore = false;
+        }
+    }
+
+    private void UpdateStats()
+    {
+        _onlineCount = _logs.Count(l => l.IsOnline);
+        _offlineCount = _logs.Count(l => !l.IsOnline);
+        _totalCount = _logs.Count;
+    }
+
+    private void Cancel() => MudDialog?.Cancel();
+}

@@ -1,0 +1,80 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{8433C477-B5B8-4407-ABA7-C077AA582110}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TgLitePanel.Host", "src\TgLitePanel.Host\TgLitePanel.Host.csproj", "{3EE0E048-A224-457F-920E-F1C26EFDE52E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TgLitePanel.Core.Abstractions", "src\TgLitePanel.Core.Abstractions\TgLitePanel.Core.Abstractions.csproj", "{74ED6470-D8E2-4F8D-98CE-E68A84D9F350}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TgLitePanel.Infrastructure.Persistence", "src\TgLitePanel.Infrastructure.Persistence\TgLitePanel.Infrastructure.Persistence.csproj", "{EF7803FE-96B2-4DB8-B5D7-C67111E1FAC7}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "modules", "modules", "{C67282CD-B802-4212-85FE-9FAC7076A425}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TgLitePanel.Module.Accounts", "src\modules\TgLitePanel.Module.Accounts\TgLitePanel.Module.Accounts.csproj", "{A4AD8F3B-76D1-4113-8000-44A96A91CFE5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TgLitePanel.Module.Chat", "src\modules\TgLitePanel.Module.Chat\TgLitePanel.Module.Chat.csproj", "{7C0AE50F-19BE-4650-9465-7C35344A15D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TgLitePanel.Module.Settings", "src\modules\TgLitePanel.Module.Settings\TgLitePanel.Module.Settings.csproj", "{0479CC88-013B-4D17-926C-AD2C9FCB6DC8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{5E6973EC-FE48-45F8-BD4D-F0277A4C91C3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TgLitePanel.Tests", "tests\TgLitePanel.Tests\TgLitePanel.Tests.csproj", "{FCA24AF3-101E-44D6-95FA-30A7CE21D2F2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TgLitePanel.Infrastructure.WTelegram", "src\TgLitePanel.Infrastructure.WTelegram\TgLitePanel.Infrastructure.WTelegram.csproj", "{6B91E554-2ED6-47D2-9A51-18453EBA505E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3EE0E048-A224-457F-920E-F1C26EFDE52E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3EE0E048-A224-457F-920E-F1C26EFDE52E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3EE0E048-A224-457F-920E-F1C26EFDE52E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3EE0E048-A224-457F-920E-F1C26EFDE52E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{74ED6470-D8E2-4F8D-98CE-E68A84D9F350}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{74ED6470-D8E2-4F8D-98CE-E68A84D9F350}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{74ED6470-D8E2-4F8D-98CE-E68A84D9F350}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{74ED6470-D8E2-4F8D-98CE-E68A84D9F350}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EF7803FE-96B2-4DB8-B5D7-C67111E1FAC7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF7803FE-96B2-4DB8-B5D7-C67111E1FAC7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EF7803FE-96B2-4DB8-B5D7-C67111E1FAC7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EF7803FE-96B2-4DB8-B5D7-C67111E1FAC7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A4AD8F3B-76D1-4113-8000-44A96A91CFE5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A4AD8F3B-76D1-4113-8000-44A96A91CFE5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A4AD8F3B-76D1-4113-8000-44A96A91CFE5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A4AD8F3B-76D1-4113-8000-44A96A91CFE5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7C0AE50F-19BE-4650-9465-7C35344A15D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7C0AE50F-19BE-4650-9465-7C35344A15D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7C0AE50F-19BE-4650-9465-7C35344A15D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7C0AE50F-19BE-4650-9465-7C35344A15D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0479CC88-013B-4D17-926C-AD2C9FCB6DC8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0479CC88-013B-4D17-926C-AD2C9FCB6DC8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0479CC88-013B-4D17-926C-AD2C9FCB6DC8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0479CC88-013B-4D17-926C-AD2C9FCB6DC8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FCA24AF3-101E-44D6-95FA-30A7CE21D2F2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FCA24AF3-101E-44D6-95FA-30A7CE21D2F2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FCA24AF3-101E-44D6-95FA-30A7CE21D2F2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FCA24AF3-101E-44D6-95FA-30A7CE21D2F2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6B91E554-2ED6-47D2-9A51-18453EBA505E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6B91E554-2ED6-47D2-9A51-18453EBA505E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6B91E554-2ED6-47D2-9A51-18453EBA505E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6B91E554-2ED6-47D2-9A51-18453EBA505E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3EE0E048-A224-457F-920E-F1C26EFDE52E} = {8433C477-B5B8-4407-ABA7-C077AA582110}
+		{74ED6470-D8E2-4F8D-98CE-E68A84D9F350} = {8433C477-B5B8-4407-ABA7-C077AA582110}
+		{EF7803FE-96B2-4DB8-B5D7-C67111E1FAC7} = {8433C477-B5B8-4407-ABA7-C077AA582110}
+		{C67282CD-B802-4212-85FE-9FAC7076A425} = {8433C477-B5B8-4407-ABA7-C077AA582110}
+		{A4AD8F3B-76D1-4113-8000-44A96A91CFE5} = {C67282CD-B802-4212-85FE-9FAC7076A425}
+		{7C0AE50F-19BE-4650-9465-7C35344A15D5} = {C67282CD-B802-4212-85FE-9FAC7076A425}
+		{0479CC88-013B-4D17-926C-AD2C9FCB6DC8} = {C67282CD-B802-4212-85FE-9FAC7076A425}
+		{FCA24AF3-101E-44D6-95FA-30A7CE21D2F2} = {5E6973EC-FE48-45F8-BD4D-F0277A4C91C3}
+		{6B91E554-2ED6-47D2-9A51-18453EBA505E} = {8433C477-B5B8-4407-ABA7-C077AA582110}
+	EndGlobalSection
+EndGlobal

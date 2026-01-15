@@ -1,0 +1,41 @@
+@using TgLitePanel.Module.Accounts
+@using TgLitePanel.Module.Chat
+@using TgLitePanel.Module.Settings
+@using TgLitePanel.Core.Abstractions.Modules
+@inject IModuleManager ModuleManager
+
+<Router AppAssembly="typeof(Program).Assembly"
+        AdditionalAssemblies="@GetAllAssemblies()">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <LayoutView Layout="typeof(Layout.MainLayout)">
+                    <MudPaper Class="pa-6" Elevation="0">
+                        <MudText Typo="Typo.h6">需要登录</MudText>
+                        <MudText Typo="Typo.body2" Class="mt-2">请先前往登录页面完成登录。</MudText>
+                        <MudButton Class="mt-4" Color="Color.Primary" Variant="Variant.Filled" Href="/login">去登录</MudButton>
+                    </MudPaper>
+                </LayoutView>
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>
+
+@code {
+    private IEnumerable<System.Reflection.Assembly> GetAllAssemblies()
+    {
+        // 内置模块
+        var builtInAssemblies = new[]
+        {
+            typeof(global::TgLitePanel.Module.Accounts.AccountsModule).Assembly,
+            typeof(global::TgLitePanel.Module.Chat.ChatModule).Assembly,
+            typeof(global::TgLitePanel.Module.Settings.SettingsModule).Assembly
+        };
+
+        // 动态加载的模块程序集
+        var moduleAssemblies = ModuleManager.GetLoadedModuleAssemblies();
+
+        return builtInAssemblies.Concat(moduleAssemblies).Distinct();
+    }
+}
