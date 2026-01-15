@@ -14,7 +14,6 @@
 
 *基于纯 C# MTProto 实现的轻量级 Telegram 多账号聊天面板*
 
-*告别 TDLib 的高内存占用，1C1G 服务器轻松管理 50+ 账号*
 
 </div>
 
@@ -35,7 +34,7 @@
 <td width="50%">
 
 ### ⚡ 快速部署
-- **2-5 分钟构建** - 比 TDLib 方案快 90%
+- **2-5 分钟构建** - 
 - **一键启动** - `docker compose up -d`
 - **零配置** - 自动创建数据库和目录
 
@@ -452,13 +451,6 @@ dotnet run --project src/TgLitePanel.Host
 本项目基于 MIT 许可证开源 - 详见 [LICENSE](LICENSE) 文件。
 
 ---
-
-## 🙏 致谢
-
-- [WTelegramClient](https://github.com/wiz0u/WTelegramClient) - 优秀的纯 C# Telegram 客户端库
-- [MudBlazor](https://mudblazor.com/) - 精美的 Blazor Material Design 组件库
-- [Caddy](https://caddyserver.com/) - 现代化的 Web 服务器，自动 HTTPS
-- [ASP.NET Core](https://dotnet.microsoft.com/apps/aspnet) - 高性能 Web 框架
 
 ---
 
