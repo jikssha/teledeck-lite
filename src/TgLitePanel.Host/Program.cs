@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 using TgLitePanel.Core.Abstractions.Modules;
@@ -24,6 +25,22 @@ builder.Services.AddSignalR();
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();
 
+// 反向代理支持：用于 Caddy/Nginx 等终止 HTTPS 的场景
+// - 仅信任来自私网/本机的转发头，避免公网直接伪造 X-Forwarded-* 影响 Scheme/Host 判定
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    o.ForwardLimit = 2;
+    o.KnownNetworks.Clear();
+    o.KnownProxies.Clear();
+
+    o.KnownProxies.Add(System.Net.IPAddress.Loopback);
+    o.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+    o.KnownNetworks.Add(new IPNetwork(System.Net.IPAddress.Parse("10.0.0.0"), 8));
+    o.KnownNetworks.Add(new IPNetwork(System.Net.IPAddress.Parse("172.16.0.0"), 12));
+    o.KnownNetworks.Add(new IPNetwork(System.Net.IPAddress.Parse("192.168.0.0"), 16));
+});
+
 builder.Services.Configure<AppUpdateOptions>(builder.Configuration.GetSection("AppUpdate"));
 builder.Services.AddSingleton<AppUpdateService>();
 builder.Services.AddHostedService<AppUpdateCheckerHostedService>();
@@ -36,7 +53,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         o.Cookie.Name = "tglitepanel";
         o.Cookie.HttpOnly = true;
         o.Cookie.SameSite = SameSiteMode.Lax;
-        o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        // 允许 README 的 http://IP:7070 直连场景写入 Cookie；反代 HTTPS 时会自动变为 Secure Cookie
+        o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         o.SlidingExpiration = true;
         o.ExpireTimeSpan = TimeSpan.FromDays(30);
     });
@@ -114,6 +132,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<AccountHealthCheck
 builder.Services.AddSingleton<IAccountHealthCheckService>(sp => sp.GetRequiredService<AccountHealthCheckService>());
 
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {
