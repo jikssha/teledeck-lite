@@ -137,8 +137,8 @@ Teledeck/
 
 ```bash
 # 克隆仓库
-git clone https://github.com/YOUR_USERNAME/Teledeck.git
-cd Teledeck/docker
+git clone https://github.com/jikssha/teledeck-lite.git
+cd teledeck-lite/docker
 
 # 复制环境变量模板
 cp .env.example .env
