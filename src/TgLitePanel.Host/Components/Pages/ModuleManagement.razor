@@ -5,6 +5,7 @@
 @inject IModuleManager ModuleManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<ModuleManagement> Logger
 
 <PageTitle>模块管理</PageTitle>
 
@@ -122,6 +123,12 @@
             var modules = await ModuleManager.GetAllModulesAsync();
             _modules = modules.ToList();
         }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "加载模块列表失败");
+            _modules = new();
+            Snackbar.Add("加载模块列表失败，请检查服务端日志", Severity.Error);
+        }
         finally
         {
             _loading = false;
@@ -130,35 +137,50 @@
 
     private async Task OpenUploadDialogAsync()
     {
-        var options = new DialogOptions
+        try
         {
-            MaxWidth = MaxWidth.Medium,
-            FullWidth = true,
-            CloseOnEscapeKey = true
-        };
+            var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.Medium,
+                FullWidth = true,
+                CloseOnEscapeKey = true
+            };
 
-        var dialog = await DialogService.ShowAsync<ModuleUploadDialog>("上传模块", options);
-        var result = await dialog.Result;
+            var dialog = await DialogService.ShowAsync<ModuleUploadDialog>("上传模块", options);
+            var result = await dialog.Result;
 
-        if (result is { Canceled: false })
+            if (result is { Canceled: false })
+            {
+                await LoadModulesAsync();
+                Snackbar.Add("模块安装成功", Severity.Success);
+            }
+        }
+        catch (Exception ex)
         {
-            await LoadModulesAsync();
-            Snackbar.Add("模块安装成功", Severity.Success);
+            Logger.LogWarning(ex, "打开上传模块对话框失败");
+            Snackbar.Add("打开上传模块对话框失败，请检查服务端日志", Severity.Error);
         }
     }
 
     private async Task EnableModuleAsync(ModuleInfo module)
     {
-        var success = await ModuleManager.EnableModuleAsync(module.Id);
-        if (success)
+        try
         {
-            Snackbar.Add($"模块 {module.Name} 已启用，页面刷新后生效", Severity.Success);
+            var success = await ModuleManager.EnableModuleAsync(module.Id);
+            if (success)
+                Snackbar.Add($"模块 {module.Name} 已启用，页面刷新后生效", Severity.Success);
+            else
+                Snackbar.Add("启用模块失败", Severity.Error);
         }
-        else
+        catch (Exception ex)
         {
-            Snackbar.Add($"启用模块失败", Severity.Error);
+            Logger.LogWarning(ex, "启用模块失败: {ModuleId}", module.Id);
+            Snackbar.Add("启用模块失败，请检查服务端日志", Severity.Error);
         }
-        await LoadModulesAsync();
+        finally
+        {
+            await LoadModulesAsync();
+        }
     }
 
     private async Task DisableModuleAsync(ModuleInfo module)
@@ -171,16 +193,23 @@
 
         if (confirm != true) return;
 
-        var success = await ModuleManager.DisableModuleAsync(module.Id);
-        if (success)
+        try
         {
-            Snackbar.Add($"模块 {module.Name} 已禁用，页面刷新后生效", Severity.Success);
+            var success = await ModuleManager.DisableModuleAsync(module.Id);
+            if (success)
+                Snackbar.Add($"模块 {module.Name} 已禁用，页面刷新后生效", Severity.Success);
+            else
+                Snackbar.Add("禁用模块失败", Severity.Error);
         }
-        else
+        catch (Exception ex)
         {
-            Snackbar.Add($"禁用模块失败", Severity.Error);
+            Logger.LogWarning(ex, "禁用模块失败: {ModuleId}", module.Id);
+            Snackbar.Add("禁用模块失败，请检查服务端日志", Severity.Error);
         }
-        await LoadModulesAsync();
+        finally
+        {
+            await LoadModulesAsync();
+        }
     }
 
     private async Task UninstallModuleAsync(ModuleInfo module)
@@ -193,16 +222,23 @@
 
         if (confirm != true) return;
 
-        var success = await ModuleManager.UninstallModuleAsync(module.Id);
-        if (success)
+        try
         {
-            Snackbar.Add($"模块 {module.Name} 已卸载", Severity.Success);
+            var success = await ModuleManager.UninstallModuleAsync(module.Id);
+            if (success)
+                Snackbar.Add($"模块 {module.Name} 已卸载", Severity.Success);
+            else
+                Snackbar.Add("卸载模块失败", Severity.Error);
         }
-        else
+        catch (Exception ex)
         {
-            Snackbar.Add($"卸载模块失败", Severity.Error);
+            Logger.LogWarning(ex, "卸载模块失败: {ModuleId}", module.Id);
+            Snackbar.Add("卸载模块失败，请检查服务端日志", Severity.Error);
         }
-        await LoadModulesAsync();
+        finally
+        {
+            await LoadModulesAsync();
+        }
     }
 
     private async Task ShowModuleDetailsAsync(ModuleInfo module)

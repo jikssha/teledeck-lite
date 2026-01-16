@@ -7,14 +7,60 @@
 :root {
     --teledeck-primary: #2AABEE;
     --teledeck-primary-dark: #2B5278;
-    --teledeck-bg: #121212;
-    --teledeck-surface: #1E1E1E;
     --teledeck-success: #00C853;
     --teledeck-error: #FF5252;
+    /* 默认值：以深色主题为基准，避免未注入主题 class 时变量为空 */
+    --teledeck-bg: #121212;
+    --teledeck-surface: #1E1E1E;
     --teledeck-text-primary: #E0E0E0;
     --teledeck-text-secondary: #9E9E9E;
     --teledeck-chat-sent: #2B5278;
     --teledeck-chat-received: #212D3B;
+    --teledeck-appbar-bg: rgba(18, 18, 18, 0.85);
+    --teledeck-border: rgba(255, 255, 255, 0.06);
+    --teledeck-system-status-bg: rgba(0, 0, 0, 0.2);
+    --teledeck-tooltip-bg: rgba(30, 30, 30, 0.95);
+    --teledeck-tooltip-border: rgba(255, 255, 255, 0.1);
+    --teledeck-input-border: rgba(255, 255, 255, 0.1);
+    --teledeck-input-border-hover: rgba(255, 255, 255, 0.2);
+    --teledeck-time-color: rgba(255, 255, 255, 0.5);
+    --teledeck-card-shadow: rgba(0, 0, 0, 0.3);
+}
+
+body.mud-theme-dark, .mud-theme-dark {
+    --teledeck-bg: #121212;
+    --teledeck-surface: #1E1E1E;
+    --teledeck-text-primary: #E0E0E0;
+    --teledeck-text-secondary: #9E9E9E;
+    --teledeck-chat-sent: #2B5278;
+    --teledeck-chat-received: #212D3B;
+    --teledeck-appbar-bg: rgba(18, 18, 18, 0.85);
+    --teledeck-border: rgba(255, 255, 255, 0.06);
+    --teledeck-system-status-bg: rgba(0, 0, 0, 0.2);
+    --teledeck-tooltip-bg: rgba(30, 30, 30, 0.95);
+    --teledeck-tooltip-border: rgba(255, 255, 255, 0.1);
+    --teledeck-input-border: rgba(255, 255, 255, 0.1);
+    --teledeck-input-border-hover: rgba(255, 255, 255, 0.2);
+    --teledeck-time-color: rgba(255, 255, 255, 0.5);
+    --teledeck-card-shadow: rgba(0, 0, 0, 0.3);
+}
+
+body.mud-theme-light, .mud-theme-light {
+    --teledeck-bg: #F6F7F9;
+    --teledeck-surface: #FFFFFF;
+    --teledeck-text-primary: #111827;
+    --teledeck-text-secondary: #6B7280;
+    --teledeck-chat-sent: #E7F4FF;
+    --teledeck-chat-received: #FFFFFF;
+    --teledeck-appbar-bg: rgba(255, 255, 255, 0.72);
+    --teledeck-border: rgba(17, 24, 39, 0.08);
+    --teledeck-system-status-bg: rgba(17, 24, 39, 0.03);
+    --teledeck-tooltip-bg: rgba(17, 24, 39, 0.92);
+    --teledeck-tooltip-border: rgba(255, 255, 255, 0.12);
+    --teledeck-input-border: rgba(17, 24, 39, 0.12);
+    --teledeck-input-border-hover: rgba(17, 24, 39, 0.22);
+    --teledeck-time-color: rgba(17, 24, 39, 0.45);
+    --teledeck-card-shadow: rgba(17, 24, 39, 0.12);
 }
 
 html, body {
@@ -29,10 +75,10 @@ html, body {
 
 /* === 顶部栏毛玻璃效果 === */
 .teledeck-appbar {
-    background: rgba(18, 18, 18, 0.85) !important;
+    background: var(--teledeck-appbar-bg) !important;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--teledeck-border);
     height: 64px !important;
 }
 
@@ -43,11 +89,11 @@ html, body {
 
 /* === 侧边栏样式 === */
 .teledeck-drawer {
-    border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border-right: 1px solid var(--teledeck-border) !important;
 }
 
 .teledeck-system-status {
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--teledeck-system-status-bg);
     border-radius: 8px;
     margin: 8px;
 }
@@ -67,7 +113,7 @@ html, body {
 
 .account-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 24px var(--teledeck-card-shadow);
 }
 
 /* 账号状态动效 - 正在连接时的脉冲效果 */
@@ -119,7 +165,7 @@ html, body {
 
 .chat-bubble-time {
     font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--teledeck-time-color);
     margin-top: 4px;
     text-align: right;
 }
@@ -246,12 +292,12 @@ html, body {
 
 /* === 表单样式优化 === */
 .mud-input-outlined .mud-input-outlined-border {
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--teledeck-input-border);
     transition: border-color 0.2s ease;
 }
 
 .mud-input-outlined:hover .mud-input-outlined-border {
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: var(--teledeck-input-border-hover);
 }
 
 .mud-input-outlined.mud-input-focused .mud-input-outlined-border {
@@ -288,9 +334,9 @@ html, body {
 
 /* === 工具提示样式 === */
 .mud-tooltip {
-    background-color: rgba(30, 30, 30, 0.95) !important;
+    background-color: var(--teledeck-tooltip-bg) !important;
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--teledeck-tooltip-border);
 }
 
 /* === 原有样式保留（向后兼容） === */

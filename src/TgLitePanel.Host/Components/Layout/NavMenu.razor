@@ -22,7 +22,18 @@
 
         @* 动态模块菜单项 *@
         @{
-            var moduleMenuItems = ModuleManager.GetModuleMenuItems();
+            IReadOnlyList<ModuleMenuItem> moduleMenuItems;
+            try
+            {
+                moduleMenuItems = ModuleManager.GetModuleMenuItems()
+                    .Where(x => x.ShowInNav)
+                    .OrderBy(x => x.Order)
+                    .ToList();
+            }
+            catch
+            {
+                moduleMenuItems = Array.Empty<ModuleMenuItem>();
+            }
         }
         @if (moduleMenuItems.Any())
         {

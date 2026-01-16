@@ -7,6 +7,7 @@
 @inject IAppConfigService AppConfigService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime Js
+@inject ISnackbar Snackbar
 @using TgLitePanel.Host.Services
 
 <MudThemeProvider IsDarkMode="@_isDarkMode" Theme="@_theme" />
@@ -30,22 +31,27 @@
         <MudSpacer />
 
         @* 全局搜索 *@
-        <MudIconButton Icon="@Icons.Material.Filled.Search"
-                       Color="Color.Inherit"
-                       title="全局搜索" />
+        <MudTooltip Text="全局搜索（开发中）">
+            <MudIconButton Icon="@Icons.Material.Filled.Search"
+                           Color="Color.Inherit"
+                           title="全局搜索"
+                           OnClick="@ShowSearchNotReady" />
+        </MudTooltip>
 
         @* 明暗主题切换 *@
-        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                       Color="Color.Inherit"
-                       title="@(_isDarkMode ? "切换到浅色模式" : "切换到深色模式")"
-                       OnClick="@ToggleThemeAsync" />
+        <MudTooltip Text="@(_isDarkMode ? "切换到浅色模式" : "切换到深色模式")">
+            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                           Color="Color.Inherit"
+                           title="@(_isDarkMode ? "切换到浅色模式" : "切换到深色模式")"
+                           OnClick="@ToggleThemeAsync" />
+        </MudTooltip>
 
         @* GitHub 与版本信息 *@
-        <MudTooltip Text="打开 GitHub 仓库">
+        <MudTooltip Text="在新标签页打开 GitHub 仓库">
             <MudIconButton Icon="@AppIcons.GitHub"
                            Color="Color.Inherit"
                            Disabled="@string.IsNullOrWhiteSpace(_repoUrl)"
-                           OnClick="@OpenRepository" />
+                           OnClick="@OpenRepositoryAsync" />
         </MudTooltip>
 
         <MudText Typo="Typo.caption" Class="me-2 mud-text-secondary">
@@ -58,6 +64,7 @@
                      Size="Size.Small"
                      Color="Color.Warning"
                      Variant="Variant.Outlined"
+                     Style="cursor: pointer;"
                      OnClick="@PromptOpenLatestAsync">
                 新版本 v@_latestVersion
             </MudChip>
@@ -172,7 +179,7 @@
             PrimaryDarken = "#2B5278",
             PrimaryLighten = "#3DB8F5",
 
-            Background = "#F5F6F8",
+            Background = "#F6F7F9",
             Surface = "#FFFFFF",
 
             Success = "#00C853",
@@ -180,16 +187,16 @@
             Warning = "#FFB300",
             Info = "#2AABEE",
 
-            TextPrimary = "#212121",
-            TextSecondary = "#616161",
+            TextPrimary = "#111827",
+            TextSecondary = "#6B7280",
 
             AppbarBackground = "#FFFFFF",
             DrawerBackground = "#FFFFFF",
 
-            ActionDefault = "#616161",
-            ActionDisabled = "#BDBDBD",
-            Divider = "#E0E0E0",
-            LinesDefault = "#E0E0E0"
+            ActionDefault = "#374151",
+            ActionDisabled = "#9CA3AF",
+            Divider = "#E5E7EB",
+            LinesDefault = "#E5E7EB"
         },
         PaletteDark = new PaletteDark
         {
@@ -304,6 +311,13 @@
         {
             // 忽略：不支持 localStorage 或被浏览器策略禁用时，不做持久化
         }
+
+        Snackbar.Add(_isDarkMode ? "已切换到深色模式" : "已切换到浅色模式", Severity.Info);
+    }
+
+    private void ShowSearchNotReady()
+    {
+        Snackbar.Add("全局搜索功能正在开发中", Severity.Info);
     }
 
     private void OnUpdateStateChanged()
@@ -324,12 +338,12 @@
         _latestVersionUrl = AppUpdate.LatestVersionUrl;
     }
 
-    private void OpenRepository()
+    private async Task OpenRepositoryAsync()
     {
         if (string.IsNullOrWhiteSpace(_repoUrl))
             return;
 
-        Navigation.NavigateTo(_repoUrl, forceLoad: true);
+        await OpenUrlNewTabAsync(_repoUrl);
     }
 
     private async Task PromptOpenLatestAsync()
@@ -344,7 +358,19 @@
             cancelText: "取消");
 
         if (ok == true)
-            Navigation.NavigateTo(_latestVersionUrl, forceLoad: true);
+            await OpenUrlNewTabAsync(_latestVersionUrl);
+    }
+
+    private async Task OpenUrlNewTabAsync(string url)
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("open", url, "_blank", "noopener,noreferrer");
+        }
+        catch
+        {
+            Navigation.NavigateTo(url, forceLoad: true);
+        }
     }
 
     public void Dispose()
