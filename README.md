@@ -19,65 +19,20 @@
 
 ---
 
-## ✨ 特性
-
-<table>
-<tr>
-<td width="50%">
-
-### 🪶 轻量级架构
-- **纯 C# 实现** - 无需编译原生库
-- **单账号约 10MB** - 50+ 账号仅需 ~500MB 内存
-- **1C1G 可运行** - 适配低配服务器
-
-</td>
-<td width="50%">
-
-### ⚡ 快速部署
-- **2-5 分钟构建** - 
-- **一键启动** - `docker compose up -d`
-- **零配置** - 自动创建数据库和目录
-
-### 🆕 版本提示
-- 顶部栏会显示当前版本号；若检测到 GitHub 上有更新，会提示“新版本”并可一键跳转到仓库查看。
-- 需要在 `src/TgLitePanel.Host/appsettings.json` 配置 `AppUpdate:RepositoryUrl`（或用环境变量 `APPUPDATE__REPOSITORYURL` 覆盖）。
-
-</td>
-</tr>
-<tr>
-<td width="50%">
+## ✨功能特性
 
 ### 🎨 现代化 UI
 - **Material Design 3** - 基于 MudBlazor 的暗色主题
 - **实时更新** - Blazor Server 交互组件
-- **响应式布局** - 适配桌面和移动端
-
-</td>
-<td width="50%">
-
-### 🔐 安全优先
-- **无敏感日志** - 验证码和密码不记录
-- **会话加密** - 安全的会话文件存储
-- **速率限制** - 批量操作内置保护
-
-</td>
-</tr>
-</table>
+- **响应式布局**
+- 多账号管理：导入/导出账号会话（ZIP）
+- 消息中心：聊天列表、搜索、发送
+- 状态监控与告警：在线状态记录与告警配置
+- Webhook：事件订阅、重试、限流与安全校验
+- 模块系统：支持安装/卸载扩展模块
+- 版本提示：显示当前版本，检测到新版本可一键跳转到 GitHub
 
 ---
-
-## 📊 性能对比
-
-| 指标 | TDLib (旧方案) | WTelegramClient (当前) | 改进幅度 |
-|:----:|:-------------:|:----------------------:|:-------:|
-| **单账号内存** | ~80MB | ~10MB | ↓ 87.5% |
-| **50 账号内存** | 4-8GB | ~500MB | ↓ 90% |
-| **Docker 构建** | 30-60 分钟 | 2-5 分钟 | ↓ 90% |
-| **最低配置** | 4C8G | 1C1G | ✅ 省钱 |
-| **原生依赖** | libtdjson.so | 无 | ✅ 纯托管 |
-
----
-
 ## 🏗️ 系统架构
 
 ```
@@ -102,7 +57,7 @@
 ### 项目结构
 
 ```
-Teledeck/
+teledeck-lite/
 ├── 📁 src/
 │   ├── 📁 TgLitePanel.Host/                 # 主入口，Blazor Server
 │   ├── 📁 TgLitePanel.Core.Abstractions/    # 接口与模型定义
@@ -124,212 +79,185 @@ Teledeck/
 
 ---
 
-## 🚀 快速开始
+## 一键部署
 
 ### 前置要求
-
-- 一台 VPS 服务器（最低 1C1G）
-- 已安装 [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/install/)
 - 从 [my.telegram.org](https://my.telegram.org) 获取 API ID 和 API Hash
 - （可选）一个域名，用于 HTTPS 访问
 
-### 第一步：克隆仓库
+### 第 1 步：克隆仓库
 
 ```bash
-# 克隆仓库
 git clone https://github.com/jikssha/teledeck-lite.git
 cd teledeck-lite/docker
 
-# 复制环境变量模板
-cp .env.example .env
-
-# 编辑配置（重要：务必修改默认密码！）
-nano .env
+docker compose up -d --build
 ```
 
-### 第二步：启动服务
+查看运行状态（必须显示 `running`）：
 
 ```bash
-# 构建并启动（首次运行需要 2-5 分钟）
-docker compose up -d --build
-
-# 查看日志
-docker compose logs -f
+docker compose ps
 ```
 
-### 第三步：初始配置
+如果不是 `running`，看日志：
 
-1. 打开浏览器访问 `http://服务器IP:7070`
-2. 使用 `.env` 中配置的账号密码登录
-3. 进入 **设置** → 配置 Telegram `API ID` 和 `API Hash`
-4. 进入 **账号管理** → 添加你的第一个 Telegram 账号
+```bash
+docker compose logs -f --tail=200 tglitepanel
+```
+
+### 第 2 步：开放端口并访问
+
+浏览器访问：`http://服务器IP:7070`
+
+如果你启用了 UFW：
+
+```bash
+ufw allow 7070/tcp
+ufw status
+```
+
+### 第 3 步：首次登录（默认账号）
+
+- 默认用户名：`admin`
+- 默认密码：`tgadmin`
+
+登录后立刻做两件事：
+
+1. 打开 **账号安全**（`/security`）修改用户名和密码
+2. 打开 **系统设置**（`/settings`）填写 Telegram `API ID` 与 `API Hash`
 
 ---
 
-## 🌐 配置 Caddy 反向代理（推荐）
+## 常见问题（先看这里）
 
-使用 Caddy 可以轻松实现 HTTPS 和域名访问，自动申请和续期 SSL 证书。
-
-### 方式一：独立安装 Caddy
-
-#### 1. 安装 Caddy
+### 1) 容器一直重启 / 页面打不开
 
 ```bash
-# Debian/Ubuntu
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install caddy
-
-# CentOS/RHEL
-sudo yum install yum-plugin-copr
-sudo yum copr enable @caddy/caddy
-sudo yum install caddy
+cd ~/teledeck-lite/docker
+docker compose ps
+docker compose logs --tail=200 tglitepanel
 ```
 
-#### 2. 配置 Caddyfile
+如果你确认是首次部署（不需要保留任何数据），可以删除数据库重建：
 
 ```bash
-sudo nano /etc/caddy/Caddyfile
-```
-
-写入以下内容（将 `tg.example.com` 替换为你的域名）：
-
-```caddyfile
-tg.example.com {
-    # 自动 HTTPS（Caddy 会自动申请 Let's Encrypt 证书）
-
-    # 反向代理到 Teledeck
-    reverse_proxy localhost:7070
-
-    # 可选：启用压缩
-    encode gzip zstd
-
-    # 可选：自定义日志
-    log {
-        output file /var/log/caddy/teledeck.log
-        format json
-    }
-}
-```
-
-#### 3. 启动 Caddy
-
-```bash
-# 重载配置
-sudo systemctl reload caddy
-
-# 查看状态
-sudo systemctl status caddy
-
-# 设置开机自启
-sudo systemctl enable caddy
-```
-
-### 方式二：Docker Compose 集成 Caddy
-
-修改 `docker-compose.yml`，添加 Caddy 服务：
-
-```yaml
-services:
-  tglitepanel:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    # 移除 ports 映射，只通过 Caddy 访问
-    # ports:
-    #   - "7070:7070"
-    environment:
-      DATA_DIR: ${DATA_DIR:-/data}
-      DB_PATH: ${DB_PATH:-/data/app.db}
-      ADMIN_INIT_USER: ${ADMIN_INIT_USER:-admin}
-      ADMIN_INIT_PASS: ${ADMIN_INIT_PASS:-change-me}
-    volumes:
-      - ../data:/data
-    restart: unless-stopped
-    networks:
-      - teledeck-net
-
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    restart: unless-stopped
-    networks:
-      - teledeck-net
-    depends_on:
-      - tglitepanel
-
-networks:
-  teledeck-net:
-    driver: bridge
-
-volumes:
-  caddy_data:
-  caddy_config:
-```
-
-在 `docker/` 目录下创建 `Caddyfile`：
-
-```bash
-nano docker/Caddyfile
-```
-
-写入以下内容：
-
-```caddyfile
-tg.example.com {
-    reverse_proxy tglitepanel:7070
-    encode gzip zstd
-}
-```
-
-启动服务：
-
-```bash
+docker compose down
+rm -f ../data/app.db ../data/app.db-wal ../data/app.db-shm
 docker compose up -d --build
 ```
 
-### DNS 配置
 
-在你的域名 DNS 管理面板添加 A 记录：
+---
 
-| 类型 | 名称 | 值 | TTL |
-|:----:|:----:|:--:|:---:|
-| A | tg | 你的服务器 IP | 600 |
+## 高级配置（可选）
 
-等待 DNS 生效后（通常几分钟），即可通过 `https://tg.example.com` 访问面板。
+默认情况下无需做任何配置。如果你需要自定义数据目录/初始管理员账号，才需要 `.env`。
 
-### 验证 HTTPS
+### 1) 使用 `.env` 自定义配置
 
 ```bash
-# 检查证书状态
-curl -I https://tg.example.com
+cd ~/teledeck-lite/docker
+cp .env.example .env
+nano .env
+```
 
-# 应该看到类似输出：
-# HTTP/2 200
-# server: Caddy
+常用项：
+
+- `DATA_DIR`：容器内数据目录（通常保持 `/data`）
+- `DB_PATH`：SQLite 文件路径（通常保持 `/data/app.db`）
+- `ADMIN_INIT_USER/ADMIN_INIT_PASS`：仅用于首次启动创建管理员
+
+重要说明：
+
+- `ADMIN_INIT_*` 只用于首次创建管理员账号；创建后请在 Web 的 `/security` 修改用户名和密码。
+
+---
+
+## Caddy 反向代理（HTTPS / 推荐生产环境）
+
+直连 `7070` 适合测试；生产环境建议使用域名 + HTTPS，并把 `7070` 仅开放给本机。
+
+### 方式 A：宿主机独立安装 Caddy（推荐新手）
+
+#### A1) DNS 解析
+
+添加 DNS 记录：
+
+- `A` 记录：`example.com -> 你的服务器IP`
+
+#### A2) 安装 Caddy
+
+```bash
+apt -y install caddy
+systemctl enable --now caddy
+```
+
+#### A3) 配置 Caddyfile
+
+```bash
+nano /etc/caddy/Caddyfile
+```
+
+写入（将 `example.com` 换成你的域名）：
+
+```caddy
+example.com {
+    reverse_proxy 127.0.0.1:7070
+}
+```
+
+验证并重载：
+
+```bash
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+```
+
+如果你启用了 UFW，放行 80/443：
+
+```bash
+ufw allow 80/tcp
+ufw allow 443/tcp
+```
+
+访问：`https://example.com`
+
+#### A4)（可选）收紧 7070（推荐）
+
+当 HTTPS 已可访问后，建议不再对公网开放 7070：
+
+```bash
+ufw deny 7070/tcp
+ufw allow from 127.0.0.1 to any port 7070 proto tcp
+```
+
+---
+
+## 更新与备份
+
+### 备份数据
+
+默认数据在 `~/teledeck-lite/data`：
+
+```bash
+cd ~/teledeck-lite
+cp -a data "data-backup-$(date +%F-%H%M%S)"
+```
+
+### 更新项目
+
+```bash
+cd ~/teledeck-lite
+git pull
+cd docker
+docker compose down
+docker compose up -d --build
 ```
 
 ---
 
 ## ⚙️ 配置说明
-
-### 环境变量
-
-| 变量 | 默认值 | 说明 |
-|:-----|:-------|:-----|
-| `DATA_DIR` | `/data` | 数据存储目录 |
-| `DB_PATH` | `/data/app.db` | SQLite 数据库路径 |
-| `ADMIN_INIT_USER` | `admin` | 初始管理员用户名 |
-| `ADMIN_INIT_PASS` | `change-me` | 初始管理员密码（**请务必修改！**） |
-
 ### 数据存储
 
 | 路径 | 说明 |
@@ -360,32 +288,14 @@ archive.zip
 ├── +1234567890/
 │   ├── +1234567890.session
 │   ├── +1234567890.json
-│   └── 2fa.txt           # 自动解析并存储
+│   └── 2fa.txt           # 二级密码（可选，不会持久化）
 ├── +9876543210/
 │   ├── +9876543210.session
 │   └── +9876543210.json
 └── ...
 ```
 
-> **提示**：`2fa.txt` 文件中的密码会自动解析并保存到数据库，登录时自动使用。
-
----
-
-## 🛠️ 本地开发
-
-```bash
-# 还原依赖
-dotnet restore
-
-# 构建项目
-dotnet build
-
-# 运行测试
-dotnet test
-
-# 启动开发服务器
-dotnet run --project src/TgLitePanel.Host
-```
+> **提示**：`2fa.txt` 仅用于导入时读取二级密码，不会持久化到数据库。
 
 ### 技术栈
 
@@ -407,19 +317,8 @@ dotnet run --project src/TgLitePanel.Host
 - ✅ **无敏感日志** - 验证码和二级密码永不记录到日志
 - ✅ **会话加密** - WTelegramClient 处理安全的会话存储
 - ✅ **速率限制** - 批量操作内置保护机制
-- ✅ **密码哈希** - 管理员密码使用 Argon2id 安全哈希
+- ✅ **密码哈希** - 管理员密码使用 PBKDF2-SHA256（150,000 次迭代）
 - ✅ **ZIP 炸弹防护** - 导入验证防止恶意压缩包
-
-### 不支持的功能
-
-本项目专注于个人多账号管理，**不支持**以下功能：
-
-- ❌ 群发消息 / 自动化任务
-- ❌ 媒体消息（图片、视频、语音）
-- ❌ 加密聊天（Secret Chat）
-- ❌ 语音/视频通话
-
-> ⚠️ **提示**：请遵守 Telegram 服务条款，合理使用本项目。
 
 ---
 
@@ -451,7 +350,6 @@ dotnet run --project src/TgLitePanel.Host
 本项目基于 MIT 许可证开源 - 详见 [LICENSE](LICENSE) 文件。
 
 ---
-
 ---
 
 <div align="center">

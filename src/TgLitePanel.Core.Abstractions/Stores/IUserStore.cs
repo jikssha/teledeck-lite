@@ -5,5 +5,5 @@ public interface IUserStore
     Task<UserRecord?> FindByUsernameAsync(string username, CancellationToken cancellationToken);
     Task<UserRecord?> FindByIdAsync(long userId, CancellationToken cancellationToken);
     Task<long> EnsureAdminAsync(string username, string passwordHash, CancellationToken cancellationToken);
+    Task UpdateCredentialsAsync(long userId, string? newUsername, string? newPasswordHash, CancellationToken cancellationToken);
 }
-

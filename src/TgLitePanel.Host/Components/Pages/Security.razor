@@ -1,0 +1,146 @@
+@page "/security"
+@attribute [Authorize(Roles = Roles.Admin)]
+
+@using TgLitePanel.Core.Abstractions
+@using TgLitePanel.Core.Abstractions.Security
+
+@inject IAppConfigService AppConfigService
+@inject NavigationManager Navigation
+
+<PageTitle>账号安全</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudText Typo="Typo.h5">账号安全</MudText>
+
+    @if (_mustChange)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-3">
+            检测到你仍在使用默认/弱密码，请立即修改用户名和密码。
+        </MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <MudAlert Severity="@_messageSeverity" Class="mt-3">@_message</MudAlert>
+    }
+
+    <MudPaper Class="pa-4 mt-4" Elevation="1">
+        <MudText Typo="Typo.subtitle1">修改用户名与密码</MudText>
+
+        <form method="post" action="/api/auth/update-credentials" class="mt-3">
+            <AntiforgeryToken />
+
+            <MudTextField T="string"
+                          UserAttributes="@_currentPasswordAttrs"
+                          Label="当前密码"
+                          Variant="Variant.Outlined"
+                          InputType="InputType.Password"
+                          Required="true"
+                          FullWidth="true" />
+
+            <MudTextField T="string"
+                          UserAttributes="@_newUsernameAttrs"
+                          Label="新用户名（可选）"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          Class="mt-3" />
+
+            <MudTextField T="string"
+                          UserAttributes="@_newPasswordAttrs"
+                          Label="新密码（可选，至少 12 位）"
+                          Variant="Variant.Outlined"
+                          InputType="InputType.Password"
+                          FullWidth="true"
+                          Class="mt-3" />
+
+            <MudTextField T="string"
+                          UserAttributes="@_confirmPasswordAttrs"
+                          Label="确认新密码"
+                          Variant="Variant.Outlined"
+                          InputType="InputType.Password"
+                          FullWidth="true"
+                          Class="mt-3" />
+
+            <MudButton ButtonType="ButtonType.Submit"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Class="mt-4">
+                保存修改
+            </MudButton>
+
+            <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">
+                提示：修改用户名后会自动刷新登录状态。
+            </MudText>
+        </form>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? Success { get; set; }
+
+    private bool _mustChange;
+    private string? _message;
+    private Severity _messageSeverity = Severity.Info;
+
+    private readonly Dictionary<string, object> _currentPasswordAttrs = new()
+    {
+        ["name"] = "currentPassword",
+        ["autocomplete"] = "current-password",
+    };
+
+    private readonly Dictionary<string, object> _newUsernameAttrs = new()
+    {
+        ["name"] = "newUsername",
+        ["autocomplete"] = "username",
+    };
+
+    private readonly Dictionary<string, object> _newPasswordAttrs = new()
+    {
+        ["name"] = "newPassword",
+        ["autocomplete"] = "new-password",
+    };
+
+    private readonly Dictionary<string, object> _confirmPasswordAttrs = new()
+    {
+        ["name"] = "confirmPassword",
+        ["autocomplete"] = "new-password",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mustChange = await GetMustChangeAsync();
+        UpdateMessageFromQuery();
+    }
+
+    protected override void OnParametersSet()
+    {
+        UpdateMessageFromQuery();
+    }
+
+    private void UpdateMessageFromQuery()
+    {
+        if (!string.IsNullOrWhiteSpace(Error))
+        {
+            _message = Error;
+            _messageSeverity = Severity.Error;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(Success))
+        {
+            _message = Success;
+            _messageSeverity = Severity.Success;
+            return;
+        }
+
+        _message = null;
+    }
+
+    private async Task<bool> GetMustChangeAsync()
+    {
+        var raw = await AppConfigService.GetStringAsync(AppConfigKeys.SecurityMustChangeAdminCredentials, CancellationToken.None);
+        return bool.TryParse(raw, out var b) && b;
+    }
+}

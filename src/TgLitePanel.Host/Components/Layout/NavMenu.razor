@@ -46,6 +46,15 @@
 
         <AuthorizeView Roles="Admin">
             <Authorized>
+                <MudNavLink Href="/security"
+                            Icon="@Icons.Material.Filled.Security">
+                    账号安全
+                </MudNavLink>
+            </Authorized>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Admin">
+            <Authorized>
                 <MudNavLink Href="/admin/modules"
                             Icon="@Icons.Material.Filled.Extension">
                     模块管理

@@ -4,9 +4,12 @@
 @inject AppUpdateService AppUpdate
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
+@inject IAppConfigService AppConfigService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime Js
 @using TgLitePanel.Host.Services
 
-<MudThemeProvider IsDarkMode="true" Theme="@_theme" />
+<MudThemeProvider IsDarkMode="@_isDarkMode" Theme="@_theme" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -31,10 +34,11 @@
                        Color="Color.Inherit"
                        title="全局搜索" />
 
-        @* 夜间模式切换（已是深色模式，保留占位） *@
-        <MudIconButton Icon="@Icons.Material.Filled.DarkMode"
+        @* 明暗主题切换 *@
+        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
                        Color="Color.Inherit"
-                       title="深色模式" />
+                       title="@(_isDarkMode ? "切换到浅色模式" : "切换到深色模式")"
+                       OnClick="@ToggleThemeAsync" />
 
         @* GitHub 与版本信息 *@
         <MudTooltip Text="打开 GitHub 仓库">
@@ -147,6 +151,10 @@
     private int _activeInstances = 0;
     private int _maxInstances = 50;
 
+    private const string ThemeStorageKey = "teledeck-theme";
+    private bool _isDarkMode = true;
+    private bool _securityPromptShown;
+
     private string _currentVersion = "0.0.0";
     private string? _latestVersion;
     private bool _hasUpdate;
@@ -158,6 +166,31 @@
     /// </summary>
     private readonly MudTheme _theme = new()
     {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#2AABEE",
+            PrimaryDarken = "#2B5278",
+            PrimaryLighten = "#3DB8F5",
+
+            Background = "#F5F6F8",
+            Surface = "#FFFFFF",
+
+            Success = "#00C853",
+            Error = "#FF5252",
+            Warning = "#FFB300",
+            Info = "#2AABEE",
+
+            TextPrimary = "#212121",
+            TextSecondary = "#616161",
+
+            AppbarBackground = "#FFFFFF",
+            DrawerBackground = "#FFFFFF",
+
+            ActionDefault = "#616161",
+            ActionDisabled = "#BDBDBD",
+            Divider = "#E0E0E0",
+            LinesDefault = "#E0E0E0"
+        },
         PaletteDark = new PaletteDark
         {
             // 核心配色 - 基于 Telegram 官方蓝
@@ -209,6 +242,68 @@
 
         // 这里可以获取实际的活跃实例数
         // _activeInstances = TdClientManager.ActiveCount;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            var v = await Js.InvokeAsync<string?>("localStorage.getItem", ThemeStorageKey);
+            if (string.Equals(v, "light", StringComparison.OrdinalIgnoreCase))
+                _isDarkMode = false;
+            else if (string.Equals(v, "dark", StringComparison.OrdinalIgnoreCase))
+                _isDarkMode = true;
+        }
+        catch
+        {
+            // 忽略：不支持 localStorage 或被浏览器策略禁用时，保持默认主题
+        }
+
+        await PromptChangeDefaultCredentialsIfNeededAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PromptChangeDefaultCredentialsIfNeededAsync()
+    {
+        if (_securityPromptShown)
+            return;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated != true)
+            return;
+
+        var raw = await AppConfigService.GetStringAsync(AppConfigKeys.SecurityMustChangeAdminCredentials, CancellationToken.None);
+        var mustChange = bool.TryParse(raw, out var b) && b;
+        if (!mustChange)
+            return;
+
+        _securityPromptShown = true;
+
+        var ok = await DialogService.ShowMessageBox(
+            "安全提醒",
+            "检测到你仍在使用默认/弱密码。为保障安全，请立即在“账号安全”中修改用户名和密码。",
+            yesText: "去修改",
+            cancelText: "稍后再说");
+
+        if (ok == true)
+            Navigation.NavigateTo("/security");
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        _isDarkMode = !_isDarkMode;
+
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", ThemeStorageKey, _isDarkMode ? "dark" : "light");
+        }
+        catch
+        {
+            // 忽略：不支持 localStorage 或被浏览器策略禁用时，不做持久化
+        }
     }
 
     private void OnUpdateStateChanged()

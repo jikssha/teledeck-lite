@@ -5,6 +5,9 @@
 <MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-12">
     <MudPaper Class="pa-6" Elevation="1">
         <MudText Typo="Typo.h6">管理员登录</MudText>
+        <MudAlert Severity="Severity.Info" Class="mt-4">
+            首次部署默认账号：用户名 admin，密码 tgadmin。登录后请前往“账号安全”修改用户名和密码。
+        </MudAlert>
         @if (!string.IsNullOrWhiteSpace(_error))
         {
             <MudAlert Severity="Severity.Error" Class="mt-4">@_error</MudAlert>

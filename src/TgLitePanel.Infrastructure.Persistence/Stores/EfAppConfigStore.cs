@@ -12,6 +12,18 @@ public sealed class EfAppConfigStore : IAppConfigStore
 
     public EfAppConfigStore(AppDbContext db) => _db = db;
 
+    public async Task<string?> GetStringAsync(string key, CancellationToken cancellationToken)
+    {
+        var row = await _db.AppConfigs.AsNoTracking().FirstOrDefaultAsync(x => x.Key == key, cancellationToken);
+        return row?.Value;
+    }
+
+    public async Task SetStringAsync(string key, string value, CancellationToken cancellationToken)
+    {
+        await UpsertAsync(key, value, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<TelegramApiConfigDto?> GetTelegramApiConfigAsync(CancellationToken cancellationToken)
     {
         var apiIdRow = await _db.AppConfigs.AsNoTracking().FirstOrDefaultAsync(x => x.Key == AppConfigKeys.TgApiId, cancellationToken);
@@ -54,4 +66,3 @@ public sealed class EfAppConfigStore : IAppConfigStore
         row.UpdatedAtUtc = DateTime.UtcNow;
     }
 }
-

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TgLitePanel.Core.Abstractions.Exceptions;
 using TgLitePanel.Core.Abstractions.Security;
 using TgLitePanel.Core.Abstractions.Stores;
 using TgLitePanel.Infrastructure.Persistence.Entities;
@@ -40,5 +41,32 @@ public sealed class EfUserStore : IUserStore
         await _db.SaveChangesAsync(cancellationToken);
         return entity.Id;
     }
-}
 
+    public async Task UpdateCredentialsAsync(long userId, string? newUsername, string? newPasswordHash, CancellationToken cancellationToken)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
+        if (user is null)
+            throw new NotFoundException("用户不存在");
+
+        if (!string.IsNullOrWhiteSpace(newUsername))
+        {
+            var trimmed = newUsername.Trim();
+            if (trimmed.Length < 3)
+                throw new ValidationException("用户名至少 3 个字符");
+
+            if (!string.Equals(trimmed, user.Username, StringComparison.Ordinal))
+            {
+                var exists = await _db.Users.AnyAsync(x => x.Username == trimmed, cancellationToken);
+                if (exists)
+                    throw new ValidationException("用户名已存在");
+
+                user.Username = trimmed;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(newPasswordHash))
+            user.PasswordHash = newPasswordHash;
+
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+}

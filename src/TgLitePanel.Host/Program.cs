@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
+using TgLitePanel.Core.Abstractions;
 using TgLitePanel.Core.Abstractions.Modules;
 using TgLitePanel.Core.Abstractions.Services;
 using TgLitePanel.Core.Abstractions.Stores;
@@ -183,6 +184,65 @@ app.MapPost("/api/auth/login", async (HttpContext httpContext, AuthService authS
     return Results.Redirect("/");
 }).DisableAntiforgery();
 
+app.MapPost("/api/auth/update-credentials", async (HttpContext httpContext, IUserStore userStore, IAppConfigStore appConfigStore, PasswordHasher hasher, AuthService authService, CancellationToken ct) =>
+{
+    if (!IsSameOrigin(httpContext))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    var userIdStr = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (!long.TryParse(userIdStr, out var userId))
+        return Results.Redirect("/login?error=" + Uri.EscapeDataString("未登录或登录状态异常"));
+
+    var form = await httpContext.Request.ReadFormAsync(ct);
+    var currentPassword = form["currentPassword"].ToString();
+    var newUsername = form["newUsername"].ToString();
+    var newPassword = form["newPassword"].ToString();
+    var confirmPassword = form["confirmPassword"].ToString();
+
+    if (string.IsNullOrWhiteSpace(currentPassword))
+        return Results.Redirect("/security?error=" + Uri.EscapeDataString("请输入当前密码"));
+
+    if (string.IsNullOrWhiteSpace(newPassword) && string.IsNullOrWhiteSpace(newUsername))
+        return Results.Redirect("/security?error=" + Uri.EscapeDataString("请至少修改用户名或密码其中一项"));
+
+    if (!string.IsNullOrWhiteSpace(newPassword))
+    {
+        if (newPassword.Length < 12)
+            return Results.Redirect("/security?error=" + Uri.EscapeDataString("新密码至少 12 位（建议包含大小写字母、数字和符号）"));
+        if (!string.Equals(newPassword, confirmPassword, StringComparison.Ordinal))
+            return Results.Redirect("/security?error=" + Uri.EscapeDataString("两次输入的新密码不一致"));
+    }
+
+    var user = await userStore.FindByIdAsync(userId, ct);
+    if (user is null)
+        return Results.Redirect("/security?error=" + Uri.EscapeDataString("用户不存在"));
+
+    if (!hasher.Verify(currentPassword, user.PasswordHash))
+        return Results.Redirect("/security?error=" + Uri.EscapeDataString("当前密码错误"));
+
+    var passwordHash = string.IsNullOrWhiteSpace(newPassword) ? null : hasher.Hash(newPassword);
+    var usernameToUpdate = string.IsNullOrWhiteSpace(newUsername) ? null : newUsername;
+
+    try
+    {
+        await userStore.UpdateCredentialsAsync(userId, usernameToUpdate, passwordHash, ct);
+    }
+    catch (Exception ex)
+    {
+        return Results.Redirect("/security?error=" + Uri.EscapeDataString(ex.Message));
+    }
+
+    // 清除“需要改密”标记（若存在）
+    await appConfigStore.SetStringAsync(AppConfigKeys.SecurityMustChangeAdminCredentials, "false", ct);
+
+    // 重新签发 Cookie，避免修改用户名后仍显示旧用户名
+    var updated = await userStore.FindByIdAsync(userId, ct);
+    if (updated is not null)
+        await authService.SignInAsync(httpContext, updated, ct);
+
+    return Results.Redirect("/security?success=" + Uri.EscapeDataString("已更新账号信息"));
+}).RequireAuthorization().DisableAntiforgery();
+
 app.MapPost("/api/auth/logout", async (HttpContext httpContext, IAuditLogStore audit, CancellationToken ct) =>
 {
     var userId = authServiceUserId(httpContext);
@@ -228,7 +288,8 @@ app.MapPost("/api/accounts/import", async (HttpContext httpContext, IAccountServ
 }).RequireAuthorization().DisableAntiforgery();
 
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .DisableAntiforgery();
 
 app.MapHub<TelegramHub>("/hubs/telegram").RequireAuthorization();
 app.MapControllers();
@@ -247,14 +308,15 @@ static async Task InitializeAsync(WebApplication app)
 
     var userStore = scope.ServiceProvider.GetRequiredService<IUserStore>();
     var hasher = scope.ServiceProvider.GetRequiredService<PasswordHasher>();
+    var appConfigStore = scope.ServiceProvider.GetRequiredService<IAppConfigStore>();
 
     var adminUser = Environment.GetEnvironmentVariable("ADMIN_INIT_USER") ?? "admin";
-    var adminPass = Environment.GetEnvironmentVariable("ADMIN_INIT_PASS") ?? "change-me";
+    var adminPass = Environment.GetEnvironmentVariable("ADMIN_INIT_PASS") ?? "tgadmin";
 
     // 安全检测：检查是否使用默认/弱密码
     var insecurePasswords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "change-me", "changeme", "password", "admin", "123456", "admin123", "root", ""
+        "change-me", "changeme", "tgadmin", "password", "admin", "123456", "admin123", "root", ""
     };
 
     if (insecurePasswords.Contains(adminPass))
@@ -268,17 +330,18 @@ static async Task InitializeAsync(WebApplication app)
         logger.LogWarning(
             "════════════════════════════════════════════════════════════════════════");
 
-        if (!app.Environment.IsDevelopment())
-        {
-            logger.LogError(
-                "生产环境禁止使用默认密码！请设置 ADMIN_INIT_PASS 环境变量后重启。");
-            throw new InvalidOperationException(
-                "安全错误：生产环境必须设置安全的 ADMIN_INIT_PASS 环境变量。");
-        }
+        logger.LogWarning("建议登录后在 Web 界面中立即修改用户名和密码。");
     }
 
     var hash = hasher.Hash(adminPass);
-    await userStore.EnsureAdminAsync(adminUser, hash, CancellationToken.None);
+    var adminId = await userStore.EnsureAdminAsync(adminUser, hash, CancellationToken.None);
+
+    // 若管理员仍在使用默认/弱密码，则设置“需要改密”标记；一旦用户修改密码，该标记会被清除
+    var adminRecord = await userStore.FindByIdAsync(adminId, CancellationToken.None);
+    var mustChange = adminRecord is not null
+                     && insecurePasswords.Contains(adminPass)
+                     && hasher.Verify(adminPass, adminRecord.PasswordHash);
+    await appConfigStore.SetStringAsync(AppConfigKeys.SecurityMustChangeAdminCredentials, mustChange ? "true" : "false", CancellationToken.None);
 
     logger.LogInformation("✅ 已切换到 WTelegramClient 轻量级架构，支持 1C1G 服务器运行 50+ 账号");
 
