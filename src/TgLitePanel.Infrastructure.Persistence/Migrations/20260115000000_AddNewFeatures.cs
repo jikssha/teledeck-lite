@@ -1,10 +1,13 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace TgLitePanel.Infrastructure.Persistence.Migrations
 {
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260115000000_AddNewFeatures")]
     /// <inheritdoc />
     public partial class AddNewFeatures : Migration
     {
