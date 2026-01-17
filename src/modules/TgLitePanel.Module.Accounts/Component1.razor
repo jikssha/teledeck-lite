@@ -1,5 +1,6 @@
 @page "/accounts"
 @attribute [Authorize]
+@rendermode InteractiveServer
 
 @inject IAccountService AccountService
 @inject IAccountHealthCheckService HealthCheckService
@@ -8,6 +9,7 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 @inject IHttpClientFactory HttpClientFactory
+@inject ILogger<Component1> Logger
 
 @implements IAsyncDisposable
 
@@ -127,26 +129,38 @@
     @* 导入区域 - 可折叠 *@
     <MudExpansionPanel Text="导入账号（ZIP）" Icon="@Icons.Material.Filled.FileUpload">
         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-            导入文件包含 TDLib 本地数据，用于重启后保持会话。
+            导入文件包含会话本地数据,用于重启后保持会话。
         </MudText>
-        <form method="post" action="/api/accounts/import" enctype="multipart/form-data">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                <MudButton HtmlTag="label"
-                           Variant="Variant.Outlined"
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudFileUpload T="IBrowserFile" Accept=".zip" FilesChanged="HandleZipFileSelected" MaximumFileCount="1">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AttachFile">
+                        选择ZIP文件
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+            @if (_selectedZipFile is not null)
+            {
+                <MudText Typo="Typo.body2">@_selectedZipFile.Name</MudText>
+                <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.AttachFile"
-                           for="importFileInput">
-                    选择文件
+                           StartIcon="@Icons.Material.Filled.Upload"
+                           OnClick="UploadZipAsync"
+                           Disabled="_isUploadingZip">
+                    @if (_isUploadingZip)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>导入中...</span>
+                    }
+                    else
+                    {
+                        <span>导入</span>
+                    }
                 </MudButton>
-                <input type="file" name="file" accept=".zip" style="display: none;" id="importFileInput" />
-                <MudButton ButtonType="ButtonType.Submit"
-                           Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Upload">
-                    导入
-                </MudButton>
-            </MudStack>
-        </form>
+            }
+        </MudStack>
     </MudExpansionPanel>
 
     @* 账号卡片流 *@
@@ -193,10 +207,10 @@
                          Value="@IsAllSelected()"
                          ValueChanged="@ToggleSelectAll"
                          Color="Color.Primary"
-                         Label="全选" />
+                         Label="全选当前页" />
             <MudSpacer />
             <MudText Typo="Typo.body2" Color="Color.Secondary">
-                共 @_accounts.Count 个账号
+                共 @_totalCount 个账号，当前显示 @_accounts.Count 个
             </MudText>
         </MudStack>
 
@@ -271,12 +285,14 @@
                                            Color="Color.Primary"
                                            Size="Size.Small"
                                            OnClick="@(() => ShowStatusHistory(account))"
-                                           title="状态历史" />
+                                           title="状态历史"
+                                           aria-label="@($"查看账号 {account.Phone} 的状态历史")" />
                             <MudIconButton Icon="@Icons.Material.Filled.Notifications"
                                            Color="Color.Primary"
                                            Size="Size.Small"
                                            Href="@($"/accounts/{account.Id}/system")"
-                                           title="系统通知" />
+                                           title="系统通知"
+                                           aria-label="@($"查看账号 {account.Phone} 的系统通知")" />
                             <MudSpacer />
                             <MudMenu Dense="true"
                                      Icon="@Icons.Material.Filled.MoreVert"
@@ -320,17 +336,32 @@
                 </MudItem>
             }
         </MudGrid>
+
+        @* 分页器 *@
+        @if (_totalCount > _pageSize)
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Class="mt-4">
+                <MudPagination Count="@GetPageCount()" Selected="@(_currentPage + 1)" SelectedChanged="OnPageChanged" Color="Color.Primary" Size="Size.Large" />
+            </MudStack>
+        }
     }
 </MudStack>
 
 @code {
     private List<AccountDto> _accounts = new();
+    private int _totalCount = 0;
+    private int _currentPage = 0;
+    private int _pageSize = 12; // 每页显示12个账号(3行x4列)
     private bool _isLoading = true;
     private bool _isCheckRunning;
     private HealthCheckProgressEvent? _checkProgress;
     private HashSet<long> _selectedAccountIds = new();
     private Dictionary<long, AccountStatusLog> _liveStatusMap = new();
     private Microsoft.AspNetCore.SignalR.Client.HubConnection? _hubConnection;
+
+    // ZIP导入相关字段
+    private IBrowserFile? _selectedZipFile;
+    private bool _isUploadingZip;
 
     [SupplyParameterFromQuery]
     public string? Error { get; set; }
@@ -411,7 +442,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"SignalR 连接失败: {ex.Message}");
+            Logger.LogError(ex, "SignalR 实时通信连接失败");
+            Snackbar.Add("实时状态更新不可用，部分功能受限", Severity.Warning);
         }
     }
 
@@ -422,9 +454,11 @@
             var latest = await StatusLogStore.GetLatestForAllAsync(CancellationToken.None);
             _liveStatusMap = latest.ToDictionary(x => x.Key, x => x.Value);
         }
-        catch
+        catch (Exception ex)
         {
-            // 忽略加载错误
+            Logger.LogWarning(ex, "加载账号状态失败");
+            // 可选：显示用户友好提示
+            // Snackbar.Add("无法加载账号状态，请刷新页面重试", Severity.Warning);
         }
     }
 
@@ -443,12 +477,13 @@
     private async Task ReloadAsync()
     {
         _isLoading = true;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
 
         try
         {
-            var list = await AccountService.ListAsync(CancellationToken.None);
-            _accounts = list.ToList();
+            var (items, totalCount) = await AccountService.ListPagedAsync(_currentPage, _pageSize, CancellationToken.None);
+            _accounts = items.ToList();
+            _totalCount = totalCount;
         }
         catch (Exception ex)
         {
@@ -457,7 +492,7 @@
         finally
         {
             _isLoading = false;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -469,7 +504,7 @@
         try
         {
             _isCheckRunning = true;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
 
             await HealthCheckService.TriggerCheckAsync(new HealthCheckRequest { Source = "manual" }, CancellationToken.None);
             Snackbar.Add("已触发健康检查", Severity.Info);
@@ -489,7 +524,7 @@
         try
         {
             _isCheckRunning = true;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
 
             var request = new HealthCheckRequest
             {
@@ -517,7 +552,7 @@
         try
         {
             _isCheckRunning = true;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
 
             var request = new HealthCheckRequest
             {
@@ -680,8 +715,93 @@
 
         if (result == true)
         {
-            Snackbar.Add("删除功能即将实现", Severity.Warning);
+            try
+            {
+                var httpClient = HttpClientFactory.CreateClient();
+                var response = await httpClient.DeleteAsync($"/api/accounts/{account.Id}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add($"账号 {account.Phone} 已删除", Severity.Success);
+                    await ReloadAsync();
+                }
+                else
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"删除失败: {errorContent}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "删除账号时发生错误");
+                Snackbar.Add($"删除错误: {ex.Message}", Severity.Error);
+            }
         }
+    }
+
+    // ZIP导入相关方法
+    private async Task HandleZipFileSelected(IBrowserFile file)
+    {
+        _selectedZipFile = file;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task UploadZipAsync()
+    {
+        if (_selectedZipFile is null)
+            return;
+
+        _isUploadingZip = true;
+        try
+        {
+            // 创建multipart/form-data内容
+            using var content = new MultipartFormDataContent();
+
+            // 读取文件流（限制100MB）
+            var fileStream = _selectedZipFile.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+            var streamContent = new StreamContent(fileStream);
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
+            content.Add(streamContent, "file", _selectedZipFile.Name);
+
+            // 发送到API
+            var httpClient = HttpClientFactory.CreateClient();
+            var response = await httpClient.PostAsync("/api/accounts/import", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("ZIP文件导入成功！", Severity.Success);
+                _selectedZipFile = null;
+                await ReloadAsync(); // 刷新账号列表
+            }
+            else
+            {
+                var errorMessage = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"导入失败: {errorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "上传ZIP文件时发生错误");
+            Snackbar.Add($"上传错误: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isUploadingZip = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // 分页相关方法
+    private int GetPageCount()
+    {
+        return (_totalCount + _pageSize - 1) / _pageSize;
+    }
+
+    private async Task OnPageChanged(int newPage)
+    {
+        _currentPage = newPage - 1; // MudPagination使用1-based索引，而我们内部使用0-based
+        _selectedAccountIds.Clear(); // 切换页面时清除选择
+        await ReloadAsync();
     }
 
     public async ValueTask DisposeAsync()

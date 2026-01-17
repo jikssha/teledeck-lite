@@ -180,11 +180,11 @@ app.MapPost("/api/auth/login", async (HttpContext httpContext, AuthService authS
         return Results.Redirect("/login?error=" + Uri.EscapeDataString("用户名或密码错误"));
 
     await authService.SignInAsync(httpContext, user, ct);
-    await audit.WriteAsync(user.Id, "auth.login", "管理员登录", httpContext.Connection.RemoteIpAddress?.ToString(), ct);
+    await audit.WriteAsync(user.Username, "auth.login", "管理员登录", ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken: ct);
     return Results.Redirect("/");
 }).DisableAntiforgery();
 
-app.MapPost("/api/auth/update-credentials", async (HttpContext httpContext, IUserStore userStore, IAppConfigStore appConfigStore, PasswordHasher hasher, AuthService authService, CancellationToken ct) =>
+app.MapPost("/api/auth/update-credentials", async (HttpContext httpContext, IUserStore userStore, IAppConfigStore appConfigStore, PasswordHasher hasher, AuthService authService, IAuditLogStore audit, CancellationToken ct) =>
 {
     if (!IsSameOrigin(httpContext))
         return Results.StatusCode(StatusCodes.Status403Forbidden);
@@ -226,13 +226,28 @@ app.MapPost("/api/auth/update-credentials", async (HttpContext httpContext, IUse
     try
     {
         await userStore.UpdateCredentialsAsync(userId, usernameToUpdate, passwordHash, ct);
+
+        // 记录审计日志
+        var changes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(usernameToUpdate))
+            changes.Add($"用户名: {user.Username} → {usernameToUpdate}");
+        if (!string.IsNullOrWhiteSpace(newPassword))
+            changes.Add("密码已修改");
+
+        await audit.WriteAsync(
+            user.Username,
+            "admin.credentials_update",
+            string.Join(", ", changes),
+            ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: httpContext.Request.Headers["User-Agent"].ToString(),
+            cancellationToken: ct);
     }
     catch (Exception ex)
     {
         return Results.Redirect("/security?error=" + Uri.EscapeDataString(ex.Message));
     }
 
-    // 清除“需要改密”标记（若存在）
+    // 清除"需要改密"标记（若存在）
     await appConfigStore.SetStringAsync(AppConfigKeys.SecurityMustChangeAdminCredentials, "false", ct);
 
     // 重新签发 Cookie，避免修改用户名后仍显示旧用户名
@@ -245,31 +260,48 @@ app.MapPost("/api/auth/update-credentials", async (HttpContext httpContext, IUse
 
 app.MapPost("/api/auth/logout", async (HttpContext httpContext, IAuditLogStore audit, CancellationToken ct) =>
 {
-    var userId = authServiceUserId(httpContext);
+    var username = httpContext.User.Identity?.Name ?? "unknown";
     await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    await audit.WriteAsync(userId, "auth.logout", "退出登录", httpContext.Connection.RemoteIpAddress?.ToString(), ct);
+    await audit.WriteAsync(username, "auth.logout", "退出登录", ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken: ct);
     return Results.Redirect("/login");
-
-    static long? authServiceUserId(HttpContext ctx)
-    {
-        var id = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        return long.TryParse(id, out var v) ? v : null;
-    }
 }).RequireAuthorization();
 
-app.MapGet("/api/accounts/{accountId:long}/export", async (long accountId, IAccountService accountService, CancellationToken ct) =>
+app.MapGet("/api/accounts/{accountId:long}/export", async (long accountId, HttpContext httpContext, IAccountService accountService, IAuditLogStore audit, CancellationToken ct) =>
 {
     var stream = await accountService.ExportZipAsync(accountId, ct);
+
+    // 记录审计日志
+    var username = httpContext.User.Identity?.Name ?? "unknown";
+    await audit.WriteAsync(
+        username,
+        "account.export",
+        $"导出账号 {accountId}",
+        targetId: accountId.ToString(),
+        ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
+        userAgent: httpContext.Request.Headers["User-Agent"].ToString(),
+        cancellationToken: ct);
+
     return Results.File(stream, "application/zip", $"account-{accountId}.zip");
 }).RequireAuthorization();
 
-app.MapGet("/api/accounts/export", async (IAccountService accountService, CancellationToken ct) =>
+app.MapGet("/api/accounts/export", async (HttpContext httpContext, IAccountService accountService, IAuditLogStore audit, CancellationToken ct) =>
 {
     var stream = await accountService.ExportAllZipAsync(ct);
+
+    // 记录审计日志
+    var username = httpContext.User.Identity?.Name ?? "unknown";
+    await audit.WriteAsync(
+        username,
+        "account.export_all",
+        "导出所有账号",
+        ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
+        userAgent: httpContext.Request.Headers["User-Agent"].ToString(),
+        cancellationToken: ct);
+
     return Results.File(stream, "application/zip", "accounts.zip");
 }).RequireAuthorization();
 
-app.MapPost("/api/accounts/import", async (HttpContext httpContext, IAccountService accountService, CancellationToken ct) =>
+app.MapPost("/api/accounts/import", async (HttpContext httpContext, IAccountService accountService, IAuditLogStore audit, CancellationToken ct) =>
 {
     if (!IsSameOrigin(httpContext))
         return Results.StatusCode(StatusCodes.Status403Forbidden);
@@ -283,13 +315,62 @@ app.MapPost("/api/accounts/import", async (HttpContext httpContext, IAccountServ
         return Results.Redirect("/accounts?error=" + Uri.EscapeDataString("未选择文件"));
 
     await using var stream = file.OpenReadStream();
-    _ = await accountService.ImportZipAsync(stream, file.Length, ct);
+    var importedIds = await accountService.ImportZipAsync(stream, file.Length, ct);
+
+    // 记录审计日志
+    var username = httpContext.User.Identity?.Name ?? "unknown";
+    await audit.WriteAsync(
+        username,
+        "account.import",
+        $"导入 {importedIds.Count} 个账号",
+        ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
+        userAgent: httpContext.Request.Headers["User-Agent"].ToString(),
+        additionalData: $"AccountIds: {string.Join(",", importedIds)}",
+        cancellationToken: ct);
+
     return Results.Redirect("/accounts");
 }).RequireAuthorization().DisableAntiforgery();
 
+app.MapDelete("/api/accounts/{accountId:long}", async (long accountId, HttpContext httpContext, IAccountService accountService, IAuditLogStore audit, CancellationToken ct) =>
+{
+    var username = httpContext.User.Identity?.Name ?? "unknown";
+
+    try
+    {
+        await accountService.DeleteAsync(accountId, ct);
+
+        // 记录审计日志
+        await audit.WriteAsync(
+            username,
+            "account.delete",
+            $"删除账号 {accountId}",
+            targetId: accountId.ToString(),
+            ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: httpContext.Request.Headers["User-Agent"].ToString(),
+            cancellationToken: ct);
+
+        return Results.Ok(new { success = true });
+    }
+    catch (Exception ex)
+    {
+        // 记录失败的审计日志
+        await audit.WriteAsync(
+            username,
+            "account.delete",
+            $"删除账号 {accountId} 失败",
+            targetId: accountId.ToString(),
+            ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: httpContext.Request.Headers["User-Agent"].ToString(),
+            result: "failure",
+            additionalData: ex.Message,
+            cancellationToken: ct);
+
+        return Results.BadRequest(new { success = false, error = ex.Message });
+    }
+}).RequireAuthorization();
+
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode()
-    .DisableAntiforgery();
+    .AddInteractiveServerRenderMode();
 
 app.MapHub<TelegramHub>("/hubs/telegram").RequireAuthorization();
 app.MapControllers();

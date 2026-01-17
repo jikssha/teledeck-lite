@@ -129,7 +129,8 @@
                 <MudIconButton Icon="@Icons.Material.Filled.Refresh"
                                Color="Color.Default"
                                OnClick="LoadHistoryAsync"
-                               title="刷新消息" />
+                               title="刷新消息"
+                               aria-label="刷新聊天消息" />
             </div>
 
             <MudDivider />
@@ -182,7 +183,8 @@
                                    Size="Size.Large"
                                    OnClick="SendAsync"
                                    Disabled="@string.IsNullOrWhiteSpace(_draft)"
-                                   title="发送消息" />
+                                   title="发送消息"
+                                   aria-label="发送消息" />
                 </MudStack>
             </div>
         }

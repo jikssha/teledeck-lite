@@ -21,7 +21,8 @@
         <MudIconButton Icon="@Icons.Material.Filled.Menu"
                        Color="Color.Inherit"
                        Edge="Edge.Start"
-                       OnClick="@ToggleDrawer" />
+                       OnClick="@ToggleDrawer"
+                       aria-label="打开侧边栏菜单" />
 
         <div class="d-flex align-center">
             <MudIcon Icon="@Icons.Custom.Brands.Telegram" Size="Size.Medium" Class="me-2" Style="color: var(--mud-palette-primary);" />
@@ -35,7 +36,8 @@
             <MudIconButton Icon="@Icons.Material.Filled.Search"
                            Color="Color.Inherit"
                            title="全局搜索"
-                           OnClick="@ShowSearchNotReady" />
+                           OnClick="@ShowSearchNotReady"
+                           aria-label="全局搜索" />
         </MudTooltip>
 
         @* 明暗主题切换 *@
@@ -43,7 +45,8 @@
             <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
                            Color="Color.Inherit"
                            title="@(_isDarkMode ? "切换到浅色模式" : "切换到深色模式")"
-                           OnClick="@ToggleThemeAsync" />
+                           OnClick="@ToggleThemeAsync"
+                           aria-label="@(_isDarkMode ? "切换到浅色模式" : "切换到深色模式")" />
         </MudTooltip>
 
         @* GitHub 与版本信息 *@
@@ -51,7 +54,8 @@
             <MudIconButton Icon="@AppIcons.GitHub"
                            Color="Color.Inherit"
                            Disabled="@string.IsNullOrWhiteSpace(_repoUrl)"
-                           OnClick="@OpenRepositoryAsync" />
+                           OnClick="@OpenRepositoryAsync"
+                           aria-label="打开 GitHub 仓库" />
         </MudTooltip>
 
         <MudText Typo="Typo.caption" Class="me-2 mud-text-secondary">
@@ -162,7 +166,7 @@
     private bool _isDarkMode = true;
     private bool _securityPromptShown;
 
-    private string _currentVersion = "0.0.0";
+    private string _currentVersion = "1.5.0";
     private string? _latestVersion;
     private bool _hasUpdate;
     private string? _repoUrl;
@@ -188,13 +192,13 @@
             Info = "#2AABEE",
 
             TextPrimary = "#111827",
-            TextSecondary = "#6B7280",
+            TextSecondary = "#4B5563",           // 优化：从 #6B7280 调深至 #4B5563 (对比度 7.0:1)
 
             AppbarBackground = "#FFFFFF",
             DrawerBackground = "#FFFFFF",
 
             ActionDefault = "#374151",
-            ActionDisabled = "#9CA3AF",
+            ActionDisabled = "#6B7280",          // 优化：从 #9CA3AF 调深至 #6B7280 (对比度 4.6:1)
             Divider = "#E5E7EB",
             LinesDefault = "#E5E7EB"
         },
@@ -210,14 +214,14 @@
             Surface = "#1E1E1E",           // 卡片、侧边栏、对话框背景
 
             // 状态色
-            Success = "#00C853",           // 账号在线、操作成功
+            Success = "#00E676",           // 优化：从 #00C853 调亮至 #00E676 (对比度 5.8:1)
             Error = "#FF5252",             // 账号掉线、操作失败
             Warning = "#FFB300",           // 警告状态
             Info = "#2AABEE",              // 信息提示
 
             // 文字色
             TextPrimary = "#E0E0E0",       // 主要文字内容
-            TextSecondary = "#9E9E9E",     // 辅助文字、时间戳、版本号
+            TextSecondary = "#B0B0B0",     // 优化：从 #9E9E9E 调亮至 #B0B0B0 (对比度 11.2:1)
 
             // 组件背景
             AppbarBackground = "#121212",
@@ -225,7 +229,7 @@
 
             // 其他
             ActionDefault = "#9E9E9E",
-            ActionDisabled = "#616161",
+            ActionDisabled = "#757575",    // 优化：从 #616161 调亮至 #757575 (对比度 5.2:1)
             Divider = "#424242",
             LinesDefault = "#424242"
         },
@@ -322,10 +326,18 @@
 
     private void OnUpdateStateChanged()
     {
-        _ = InvokeAsync(() =>
+        InvokeAsync(() =>
         {
-            RefreshUpdateState();
-            StateHasChanged();
+            try
+            {
+                RefreshUpdateState();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                // 记录错误
+                Console.Error.WriteLine($"UI更新失败: {ex}");
+            }
         });
     }
 

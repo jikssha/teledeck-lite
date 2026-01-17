@@ -1,0 +1,165 @@
+@page "/settings/audit-logs"
+@attribute [Authorize(Roles = Roles.Admin)]
+
+@inject IAuditLogStore AuditLogStore
+@inject ILogger<AuditLogViewer> Logger
+
+<PageTitle>审计日志</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge">
+    <MudText Typo="Typo.h5" Class="mb-4">审计日志</MudText>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField @bind-Value="_userNameFilter" Label="用户名筛选" Variant="Variant.Outlined" Clearable="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect @bind-Value="_actionFilter" Label="操作类型" Variant="Variant.Outlined" Clearable="true">
+                    <MudSelectItem Value="@((string?)null)">全部</MudSelectItem>
+                    <MudSelectItem Value="@("auth.login")">登录</MudSelectItem>
+                    <MudSelectItem Value="@("auth.logout")">退出</MudSelectItem>
+                    <MudSelectItem Value="@("admin.credentials_update")">密码修改</MudSelectItem>
+                    <MudSelectItem Value="@("account.delete")">账号删除</MudSelectItem>
+                    <MudSelectItem Value="@("account.export")">账号导出</MudSelectItem>
+                    <MudSelectItem Value="@("account.export_all")">批量导出</MudSelectItem>
+                    <MudSelectItem Value="@("account.import")">账号导入</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudDatePicker @bind-Date="_startDate" Label="开始日期" Variant="Variant.Outlined" Clearable="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudDatePicker @bind-Date="_endDate" Label="结束日期" Variant="Variant.Outlined" Clearable="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadDataAsync">查询</MudButton>
+                <MudButton Variant="Variant.Text" OnClick="ClearFilters" Class="ml-2">清除筛选</MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudTable T="AuditLog" ServerData="LoadServerDataAsync"
+              @ref="_table"
+              Hover="true"
+              Dense="true"
+              Loading="@_isLoading"
+              LoadingProgressColor="Color.Primary">
+        <HeaderContent>
+            <MudTh>时间</MudTh>
+            <MudTh>用户名</MudTh>
+            <MudTh>操作</MudTh>
+            <MudTh>描述</MudTh>
+            <MudTh>目标</MudTh>
+            <MudTh>IP地址</MudTh>
+            <MudTh>结果</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="时间">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+            <MudTd DataLabel="用户名">@context.UserName</MudTd>
+            <MudTd DataLabel="操作">
+                <MudChip T="string" Size="Size.Small" Color="@GetActionColor(context.Action)">@GetActionDisplayName(context.Action)</MudChip>
+            </MudTd>
+            <MudTd DataLabel="描述">@context.Description</MudTd>
+            <MudTd DataLabel="目标">@(context.TargetId ?? "-")</MudTd>
+            <MudTd DataLabel="IP地址">@(context.IpAddress ?? "-")</MudTd>
+            <MudTd DataLabel="结果">
+                @if (context.Result == "success")
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">成功</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error">失败</MudChip>
+                }
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="@(new[] { 10, 25, 50, 100 })" />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private MudTable<AuditLog>? _table;
+    private bool _isLoading;
+
+    private string? _userNameFilter;
+    private string? _actionFilter;
+    private DateTime? _startDate;
+    private DateTime? _endDate;
+
+    private async Task<TableData<AuditLog>> LoadServerDataAsync(TableState state, CancellationToken cancellationToken)
+    {
+        _isLoading = true;
+        try
+        {
+            var (items, totalCount) = await AuditLogStore.ListPagedAsync(
+                state.Page,
+                state.PageSize,
+                _userNameFilter,
+                _actionFilter,
+                _startDate,
+                _endDate,
+                cancellationToken);
+
+            return new TableData<AuditLog>
+            {
+                Items = items,
+                TotalItems = totalCount
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "加载审计日志失败");
+            return new TableData<AuditLog> { Items = Array.Empty<AuditLog>(), TotalItems = 0 };
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (_table is not null)
+            await _table.ReloadServerData();
+    }
+
+    private void ClearFilters()
+    {
+        _userNameFilter = null;
+        _actionFilter = null;
+        _startDate = null;
+        _endDate = null;
+    }
+
+    private static Color GetActionColor(string action)
+    {
+        return action switch
+        {
+            "auth.login" => Color.Success,
+            "auth.logout" => Color.Info,
+            "admin.credentials_update" => Color.Warning,
+            "account.delete" => Color.Error,
+            "account.export" or "account.export_all" => Color.Primary,
+            "account.import" => Color.Secondary,
+            _ => Color.Default
+        };
+    }
+
+    private static string GetActionDisplayName(string action)
+    {
+        return action switch
+        {
+            "auth.login" => "登录",
+            "auth.logout" => "退出",
+            "admin.credentials_update" => "密码修改",
+            "account.delete" => "账号删除",
+            "account.export" => "账号导出",
+            "account.export_all" => "批量导出",
+            "account.import" => "账号导入",
+            _ => action
+        };
+    }
+}

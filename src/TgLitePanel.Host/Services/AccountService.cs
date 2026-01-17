@@ -19,18 +19,27 @@ public sealed class AccountService : IAccountService
     private readonly IAccountStore _accountStore;
     private readonly ITdClientManager _tdClientManager;
     private readonly AppRuntimeOptions _runtime;
+    private readonly ILogger<AccountService> _logger;
 
-    public AccountService(IAccountStore accountStore, ITdClientManager tdClientManager, AppRuntimeOptions runtime)
+    public AccountService(IAccountStore accountStore, ITdClientManager tdClientManager, AppRuntimeOptions runtime, ILogger<AccountService> logger)
     {
         _accountStore = accountStore;
         _tdClientManager = tdClientManager;
         _runtime = runtime;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<AccountDto>> ListAsync(CancellationToken cancellationToken)
     {
         var list = await _accountStore.ListAsync(cancellationToken);
         return list.Select(x => new AccountDto(x.AccountId, x.Phone, x.Status, x.DataDir, x.ApiIdOverride, x.SystemChatId)).ToList();
+    }
+
+    public async Task<(IReadOnlyList<AccountDto> items, int totalCount)> ListPagedAsync(int page, int pageSize, CancellationToken cancellationToken)
+    {
+        var (items, totalCount) = await _accountStore.ListPagedAsync(page, pageSize, cancellationToken);
+        var dtos = items.Select(x => new AccountDto(x.AccountId, x.Phone, x.Status, x.DataDir, x.ApiIdOverride, x.SystemChatId)).ToList();
+        return (dtos, totalCount);
     }
 
     public async Task<AccountDto> GetAsync(long accountId, CancellationToken cancellationToken)
@@ -47,6 +56,11 @@ public sealed class AccountService : IAccountService
         phone = phone.Trim();
         if (!PhoneRegex.IsMatch(phone))
             throw new ValidationException("手机号格式不正确。");
+
+        // 添加重复检查 - 防止数据库约束冲突
+        var existing = await _accountStore.ListAsync(cancellationToken);
+        if (existing.Any(x => x.Phone == phone))
+            throw new ValidationException($"手机号 {phone} 已存在，请勿重复添加。");
 
         var placeholderDir = Path.Combine(_runtime.DataDir, "accounts", "pending");
         var accountId = await _accountStore.CreateAsync(phone, placeholderDir, AccountStatus.Authorizing, cancellationToken);
@@ -245,7 +259,7 @@ public sealed class AccountService : IAccountService
         }
     }
 
-    private static async Task<bool> TryMarkReadyAsync(long accountId, ITdClient client, CancellationToken cancellationToken)
+    private async Task<bool> TryMarkReadyAsync(long accountId, ITdClient client, CancellationToken cancellationToken)
     {
         try
         {
@@ -254,9 +268,34 @@ public sealed class AccountService : IAccountService
             TdJsonHelpers.ThrowIfError(doc.RootElement);
             return doc.RootElement.TryGetProperty("@type", out var t) && t.GetString() == "user";
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "标记账号就绪失败，账号ID: {AccountId}", accountId);
             return false;
         }
+    }
+
+    public async Task DeleteAsync(long accountId, CancellationToken cancellationToken)
+    {
+        var account = await _accountStore.GetAsync(accountId, cancellationToken);
+        if (account is null)
+            throw new NotFoundException($"账号不存在：{accountId}");
+
+        // 删除账号数据库记录
+        await _accountStore.DeleteAsync(accountId, cancellationToken);
+
+        // 删除账号数据目录（异步，失败不影响删除操作）
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (Directory.Exists(account.DataDir))
+                    Directory.Delete(account.DataDir, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "删除账号数据目录失败: {DataDir}", account.DataDir);
+            }
+        }, cancellationToken);
     }
 }

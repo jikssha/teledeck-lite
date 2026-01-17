@@ -5,9 +5,11 @@ namespace TgLitePanel.Core.Abstractions.Stores;
 public interface IAccountStore
 {
     Task<IReadOnlyList<AccountRuntimeConfig>> ListAsync(CancellationToken cancellationToken);
+    Task<(IReadOnlyList<AccountRuntimeConfig> items, int totalCount)> ListPagedAsync(int page, int pageSize, CancellationToken cancellationToken);
     Task<AccountRuntimeConfig?> GetAsync(long accountId, CancellationToken cancellationToken);
     Task<long> CreateAsync(string phone, string dataDir, AccountStatus status, CancellationToken cancellationToken);
 
     Task UpdateDataDirAsync(long accountId, string dataDir, CancellationToken cancellationToken);
     Task UpdateStatusAsync(long accountId, AccountStatus status, long? systemChatId, CancellationToken cancellationToken);
+    Task DeleteAsync(long accountId, CancellationToken cancellationToken);
 }

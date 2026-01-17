@@ -2,26 +2,37 @@
 @attribute [Authorize(Roles = Roles.Admin)]
 
 @inject IAppConfigService AppConfigService
+@inject NavigationManager NavigationManager
 
 <PageTitle>系统设置</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Medium">
-    <MudText Typo="Typo.h5">系统设置</MudText>
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge">
+    <MudText Typo="Typo.h5" Class="mb-4">系统设置</MudText>
 
-    <MudPaper Class="pa-4 mt-4" Elevation="1">
-        <MudText Typo="Typo.subtitle1">Telegram API 配置</MudText>
+    <MudTabs Elevation="1" Rounded="true" Color="Color.Primary">
+        <MudTabPanel Text="API 配置" Icon="@Icons.Material.Filled.Api">
+            <MudPaper Class="pa-4 mt-4" Elevation="0">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Telegram API 配置</MudText>
 
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <MudAlert Severity="@_messageSeverity" Class="mt-3">@_message</MudAlert>
-        }
+                @if (!string.IsNullOrWhiteSpace(_message))
+                {
+                    <MudAlert Severity="@_messageSeverity" Class="mb-3">@_message</MudAlert>
+                }
 
-        <MudStack Spacing="2" Class="mt-3">
-            <MudNumericField T="int" @bind-Value="_apiId" Label="API ID" Variant="Variant.Outlined" Required="true" />
-            <MudTextField @bind-Value="_apiHash" Label="API Hash" Variant="Variant.Outlined" Required="true" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">保存</MudButton>
-        </MudStack>
-    </MudPaper>
+                <MudStack Spacing="2">
+                    <MudNumericField T="int" @bind-Value="_apiId" Label="API ID" Variant="Variant.Outlined" Required="true" />
+                    <MudTextField @bind-Value="_apiHash" Label="API Hash" Variant="Variant.Outlined" Required="true" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">保存</MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="审计日志" Icon="@Icons.Material.Filled.History">
+            <MudPaper Class="pa-0 mt-4" Elevation="0">
+                <AuditLogViewer />
+            </MudPaper>
+        </MudTabPanel>
+    </MudTabs>
 </MudContainer>
 
 @code {

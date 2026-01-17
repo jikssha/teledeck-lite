@@ -83,12 +83,21 @@ public sealed class AppDbContext : DbContext
             b.ToTable("audit_logs");
             b.HasKey(x => x.Id);
             b.Property(x => x.Id).HasColumnName("id");
-            b.Property(x => x.UserId).HasColumnName("user_id");
-            b.Property(x => x.Action).HasColumnName("action");
-            b.Property(x => x.Summary).HasColumnName("summary");
-            b.Property(x => x.Ip).HasColumnName("ip");
-            b.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
-            b.HasIndex(x => x.CreatedAtUtc);
+            b.Property(x => x.UserName).HasColumnName("user_name").HasMaxLength(100);
+            b.Property(x => x.Action).HasColumnName("action").HasMaxLength(100);
+            b.Property(x => x.Description).HasColumnName("description").HasMaxLength(500);
+            b.Property(x => x.TargetId).HasColumnName("target_id").HasMaxLength(100);
+            b.Property(x => x.IpAddress).HasColumnName("ip_address").HasMaxLength(50);
+            b.Property(x => x.UserAgent).HasColumnName("user_agent").HasMaxLength(500);
+            b.Property(x => x.Result).HasColumnName("result").HasMaxLength(20);
+            b.Property(x => x.AdditionalData).HasColumnName("additional_data");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+
+            // 索引优化：用于查询性能提升
+            b.HasIndex(x => x.UserName);
+            b.HasIndex(x => x.Action);
+            b.HasIndex(x => x.CreatedAt);
+            b.HasIndex(x => new { x.UserName, x.CreatedAt });
         });
 
         modelBuilder.Entity<SecurityOpEntity>(b =>

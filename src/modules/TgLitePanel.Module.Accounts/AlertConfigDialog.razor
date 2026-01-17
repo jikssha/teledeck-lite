@@ -42,11 +42,13 @@
                                         <MudStack Row="true" Spacing="1">
                                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                                            Size="Size.Small"
-                                                           OnClick="() => EditConfig(config)" />
+                                                           OnClick="() => EditConfig(config)"
+                                                           aria-label="编辑告警配置" />
                                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                                            Size="Size.Small"
                                                            Color="Color.Error"
-                                                           OnClick="() => DeleteConfigAsync(config)" />
+                                                           OnClick="() => DeleteConfigAsync(config)"
+                                                           aria-label="删除告警配置" />
                                         </MudStack>
                                     </MudStack>
                                 </MudCardContent>
