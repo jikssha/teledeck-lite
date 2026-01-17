@@ -29,6 +29,7 @@ builder.Services.AddMudServices(config =>
 builder.Services.AddSignalR();
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpContextAccessor();
 
 // 反向代理支持：用于 Caddy/Nginx 等终止 HTTPS 的场景
 // - 仅信任来自私网/本机的转发头，避免公网直接伪造 X-Forwarded-* 影响 Scheme/Host 判定
@@ -333,6 +334,73 @@ app.MapPost("/api/accounts/import", async (HttpContext httpContext, IAccountServ
         cancellationToken: ct);
 
     return Results.Redirect("/accounts");
+}).RequireAuthorization().DisableAntiforgery();
+
+app.MapPost("/api/accounts/import-session", async (HttpContext httpContext, IAccountService accountService, IAuditLogStore audit, CancellationToken ct) =>
+{
+    if (!IsSameOrigin(httpContext))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    if (!httpContext.Request.HasFormContentType)
+        return Results.BadRequest("必须使用 multipart/form-data");
+
+    var form = await httpContext.Request.ReadFormAsync(ct);
+    var file = form.Files.GetFile("file");
+    if (file is null || file.Length == 0)
+        return Results.BadRequest("未选择文件");
+
+    await using var stream = file.OpenReadStream();
+    var accountId = await accountService.ImportSessionFileAsync(stream, file.FileName, ct);
+
+    var username = httpContext.User.Identity?.Name ?? "unknown";
+    await audit.WriteAsync(
+        username,
+        "account.import_session",
+        $"导入 Session 文件，账号 ID: {accountId}",
+        targetId: accountId.ToString(),
+        ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
+        userAgent: httpContext.Request.Headers["User-Agent"].ToString(),
+        cancellationToken: ct);
+
+    return Results.Ok(new { success = true, accountId });
+}).RequireAuthorization().DisableAntiforgery();
+
+app.MapPost("/api/accounts/import-string-session", async (HttpContext httpContext, IAccountService accountService, IAuditLogStore audit, CancellationToken ct) =>
+{
+    if (!IsSameOrigin(httpContext))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    using var reader = new StreamReader(httpContext.Request.Body);
+    var body = await reader.ReadToEndAsync(ct);
+
+    string? sessionString = null;
+    try
+    {
+        var json = System.Text.Json.JsonDocument.Parse(body);
+        if (json.RootElement.TryGetProperty("sessionString", out var prop))
+            sessionString = prop.GetString();
+    }
+    catch
+    {
+        return Results.BadRequest("无效的 JSON 格式");
+    }
+
+    if (string.IsNullOrWhiteSpace(sessionString))
+        return Results.BadRequest("sessionString 不能为空");
+
+    var accountId = await accountService.ImportStringSessionAsync(sessionString, ct);
+
+    var username = httpContext.User.Identity?.Name ?? "unknown";
+    await audit.WriteAsync(
+        username,
+        "account.import_string_session",
+        $"导入 StringSession，账号 ID: {accountId}",
+        targetId: accountId.ToString(),
+        ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
+        userAgent: httpContext.Request.Headers["User-Agent"].ToString(),
+        cancellationToken: ct);
+
+    return Results.Ok(new { success = true, accountId });
 }).RequireAuthorization().DisableAntiforgery();
 
 app.MapDelete("/api/accounts/{accountId:long}", async (long accountId, HttpContext httpContext, IAccountService accountService, IAuditLogStore audit, CancellationToken ct) =>

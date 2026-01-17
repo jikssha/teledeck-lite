@@ -253,6 +253,7 @@
     private bool _busy;
     private string? _error;
     private string _loadingMessage = "正在连接 Telegram 服务器...";
+    private readonly CancellationTokenSource _cts = new();
 
     private long _accountId;
     private string _phone = string.Empty;
@@ -366,7 +367,7 @@
             _loadingMessage = "正在重发验证码...";
             StateHasChanged();
 
-            await AccountService.ResendCodeAsync(_accountId, CancellationToken.None);
+            await AccountService.ResendCodeAsync(_accountId, _cts.Token);
             StartResendCountdown();
         }
         catch (Exception ex)
@@ -412,6 +413,8 @@
 
     public void Dispose()
     {
+        _cts.Cancel();
+        _cts.Dispose();
         _countdownTimer?.Dispose();
     }
 
@@ -427,7 +430,7 @@
                 StateHasChanged();
 
                 var phoneNumber = _phone.StartsWith("+") ? _phone : $"+{_phone}";
-                _accountId = await AccountService.StartLoginAsync(phoneNumber, CancellationToken.None);
+                _accountId = await AccountService.StartLoginAsync(phoneNumber, _cts.Token);
                 _activeIndex = 1;
 
                 // 重置验证码输入并启动倒计时
@@ -441,7 +444,7 @@
                 _loadingMessage = "正在验证...";
                 StateHasChanged();
 
-                await AccountService.SubmitLoginCodeAsync(_accountId, _code, CancellationToken.None);
+                await AccountService.SubmitLoginCodeAsync(_accountId, _code, _cts.Token);
                 _activeIndex = 2;
                 return;
             }
@@ -453,7 +456,7 @@
                     _loadingMessage = "正在验证两步验证密码...";
                     StateHasChanged();
 
-                    await AccountService.SubmitLoginPasswordAsync(_accountId, _password, CancellationToken.None);
+                    await AccountService.SubmitLoginPasswordAsync(_accountId, _password, _cts.Token);
                 }
 
                 MudDialog.Close(DialogResult.Ok(_accountId));

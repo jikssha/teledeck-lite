@@ -9,6 +9,7 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 @inject IHttpClientFactory HttpClientFactory
+@inject IHttpContextAccessor HttpContextAccessor
 @inject ILogger<Component1> Logger
 
 @implements IAsyncDisposable
@@ -127,40 +128,134 @@
     }
 
     @* 导入区域 - 可折叠 *@
-    <MudExpansionPanel Text="导入账号（ZIP）" Icon="@Icons.Material.Filled.FileUpload">
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-            导入文件包含会话本地数据,用于重启后保持会话。
-        </MudText>
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+    <MudExpansionPanel Text="导入账号" Icon="@Icons.Material.Filled.FileUpload">
+        <MudText Typo="Typo.h6" Class="mb-3">压缩包导入（推荐）</MudText>
+        <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: var(--mud-palette-background-grey);">
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                <MudText Typo="Typo.body2"><strong>支持导入账号 Zip（推荐）：</strong></MudText>
+                <MudText Typo="Typo.body2" Color="Color.Primary">单账号：Zip 根目录直接包含一个 <code>.json</code> + 一个 <code>.session</code></MudText>
+                <MudText Typo="Typo.body2" Color="Color.Primary">批量导入：每个账号一个独立子文件夹，文件夹内包含一个 <code>.json</code> + 一个 <code>.session</code></MudText>
+                <MudText Typo="Typo.body2" Color="Color.Primary">二级密码：自动解析账号目录下的 <code>2fa.txt</code> 文件作为二级密码保存到数据库</MudText>
+            </MudAlert>
+            <MudText Typo="Typo.body2" Color="Color.Info" Class="mb-2">批量结构示例：</MudText>
+            <MudPaper Class="pa-2" Elevation="0" Style="background-color: var(--mud-palette-dark); font-family: monospace; font-size: 12px; color: var(--mud-palette-text-primary);">
+                <pre style="margin: 0; white-space: pre-wrap;">xx.zip
+├── 86131111111111
+│   ├── 86131111111111.json
+│   ├── 86131111111111.session
+│   └── 2fa.txt（可选，内容为二级密码）
+└── 86151971454541
+    ├── 86151971454541.json
+    └── 86151971454541.session</pre>
+            </MudPaper>
+        </MudPaper>
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
             <MudFileUpload T="IBrowserFile" Accept=".zip" FilesChanged="HandleZipFileSelected" MaximumFileCount="1">
                 <ActivatorContent>
-                    <MudButton Variant="Variant.Outlined"
-                               Color="Color.Primary"
-                               StartIcon="@Icons.Material.Filled.AttachFile">
-                        选择ZIP文件
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Warning"
+                               StartIcon="@Icons.Material.Filled.FolderZip">
+                        选择 ZIP 压缩包
                     </MudButton>
                 </ActivatorContent>
             </MudFileUpload>
             @if (_selectedZipFile is not null)
             {
                 <MudText Typo="Typo.body2">@_selectedZipFile.Name</MudText>
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Upload"
-                           OnClick="UploadZipAsync"
-                           Disabled="_isUploadingZip">
-                    @if (_isUploadingZip)
-                    {
-                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                        <span>导入中...</span>
-                    }
-                    else
-                    {
-                        <span>导入</span>
-                    }
-                </MudButton>
             }
         </MudStack>
+
+        <MudTextField T="string" @bind-Value="_zipTwoFactorPassword"
+                      Label="二级密码（可选）"
+                      Variant="Variant.Outlined"
+                      HelperText="统一密码，用于没有 2fa.txt 的账号；若账号目录有 2fa.txt 则优先使用文件内容"
+                      Class="mb-3" />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Dark"
+                   FullWidth="true"
+                   StartIcon="@Icons.Material.Filled.Upload"
+                   OnClick="UploadZipAsync"
+                   Disabled="@(_selectedZipFile is null || _isUploadingZip)">
+            @if (_isUploadingZip)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>导入中...</span>
+            }
+            else
+            {
+                <span>开始导入 ZIP</span>
+            }
+        </MudButton>
+
+        <MudDivider Class="my-4" />
+
+        @* Session 文件导入 *@
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6" Class="mb-3">Session 文件导入</MudText>
+                    <MudFileUpload T="IBrowserFile" Accept=".session" FilesChanged="HandleSessionFileSelected" MaximumFileCount="1">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Info"
+                                       StartIcon="@Icons.Material.Filled.CloudUpload">
+                                选择 SESSION 文件
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                    @if (_selectedSessionFile is not null)
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2">@_selectedSessionFile.Name</MudText>
+                    }
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Dark"
+                               FullWidth="true"
+                               Class="mt-3"
+                               OnClick="UploadSessionFileAsync"
+                               Disabled="@(_selectedSessionFile is null || _isUploadingSession)">
+                        @if (_isUploadingSession)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>导入中...</span>
+                        }
+                        else
+                        {
+                            <span>开始导入</span>
+                        }
+                    </MudButton>
+                </MudPaper>
+            </MudItem>
+
+            @* StringSession 导入 *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6" Class="mb-3">StringSession 导入</MudText>
+                    <MudTextField T="string" @bind-Value="_stringSessionInput"
+                                  Label="Session String (Base64)*"
+                                  Variant="Variant.Outlined"
+                                  Lines="3"
+                                  Placeholder="粘贴 Base64 编码的 StringSession..." />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Dark"
+                               FullWidth="true"
+                               Class="mt-3"
+                               OnClick="ImportStringSessionAsync"
+                               Disabled="@(string.IsNullOrWhiteSpace(_stringSessionInput) || _isImportingStringSession)">
+                        @if (_isImportingStringSession)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>导入中...</span>
+                        }
+                        else
+                        {
+                            <span>开始导入</span>
+                        }
+                    </MudButton>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
     </MudExpansionPanel>
 
     @* 账号卡片流 *@
@@ -358,10 +453,20 @@
     private HashSet<long> _selectedAccountIds = new();
     private Dictionary<long, AccountStatusLog> _liveStatusMap = new();
     private Microsoft.AspNetCore.SignalR.Client.HubConnection? _hubConnection;
+    private readonly CancellationTokenSource _cts = new();
 
     // ZIP导入相关字段
     private IBrowserFile? _selectedZipFile;
     private bool _isUploadingZip;
+    private string? _zipTwoFactorPassword;
+
+    // Session 文件导入相关字段
+    private IBrowserFile? _selectedSessionFile;
+    private bool _isUploadingSession;
+
+    // StringSession 导入相关字段
+    private string? _stringSessionInput;
+    private bool _isImportingStringSession;
 
     [SupplyParameterFromQuery]
     public string? Error { get; set; }
@@ -384,10 +489,47 @@
     {
         try
         {
+            // 获取当前请求的 Cookie 用于 SignalR 认证
+            var cookies = HttpContextAccessor.HttpContext?.Request.Cookies;
+            var cookieHeader = cookies != null
+                ? string.Join("; ", cookies.Select(c => $"{c.Key}={c.Value}"))
+                : null;
+
             _hubConnection = new Microsoft.AspNetCore.SignalR.Client.HubConnectionBuilder()
-                .WithUrl(Navigation.ToAbsoluteUri("/hubs/telegram"))
-                .WithAutomaticReconnect()
+                .WithUrl(Navigation.ToAbsoluteUri("/hubs/telegram"), options =>
+                {
+                    if (!string.IsNullOrEmpty(cookieHeader))
+                    {
+                        options.Headers.Add("Cookie", cookieHeader);
+                    }
+                })
+                .WithAutomaticReconnect(new[] { TimeSpan.Zero, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30) })
                 .Build();
+
+            // 处理重连事件
+            _hubConnection.Reconnecting += error =>
+            {
+                Logger.LogWarning(error, "SignalR 连接断开，正在尝试重连...");
+                _ = InvokeAsync(() => Snackbar.Add("实时连接已断开，正在重连...", Severity.Warning));
+                return Task.CompletedTask;
+            };
+
+            _hubConnection.Reconnected += connectionId =>
+            {
+                Logger.LogInformation("SignalR 已重连，连接ID: {ConnectionId}", connectionId);
+                _ = InvokeAsync(() => Snackbar.Add("实时连接已恢复", Severity.Success));
+                return Task.CompletedTask;
+            };
+
+            _hubConnection.Closed += error =>
+            {
+                if (error is not null)
+                {
+                    Logger.LogError(error, "SignalR 连接已关闭");
+                    _ = InvokeAsync(() => Snackbar.Add("实时连接已断开，部分功能不可用", Severity.Error));
+                }
+                return Task.CompletedTask;
+            };
 
             // 订阅健康检查进度
             _hubConnection.On<HealthCheckProgressEvent>("HealthCheckProgress", async (progress) =>
@@ -451,7 +593,7 @@
     {
         try
         {
-            var latest = await StatusLogStore.GetLatestForAllAsync(CancellationToken.None);
+            var latest = await StatusLogStore.GetLatestForAllAsync(_cts.Token);
             _liveStatusMap = latest.ToDictionary(x => x.Key, x => x.Value);
         }
         catch (Exception ex)
@@ -481,7 +623,7 @@
 
         try
         {
-            var (items, totalCount) = await AccountService.ListPagedAsync(_currentPage, _pageSize, CancellationToken.None);
+            var (items, totalCount) = await AccountService.ListPagedAsync(_currentPage, _pageSize, _cts.Token);
             _accounts = items.ToList();
             _totalCount = totalCount;
         }
@@ -506,7 +648,7 @@
             _isCheckRunning = true;
             await InvokeAsync(StateHasChanged);
 
-            await HealthCheckService.TriggerCheckAsync(new HealthCheckRequest { Source = "manual" }, CancellationToken.None);
+            await HealthCheckService.TriggerCheckAsync(new HealthCheckRequest { Source = "manual" }, _cts.Token);
             Snackbar.Add("已触发健康检查", Severity.Info);
         }
         catch (Exception ex)
@@ -531,7 +673,7 @@
                 AccountIds = _selectedAccountIds.ToArray(),
                 Source = "manual"
             };
-            await HealthCheckService.TriggerCheckAsync(request, CancellationToken.None);
+            await HealthCheckService.TriggerCheckAsync(request, _cts.Token);
             Snackbar.Add($"已触发 {_selectedAccountIds.Count} 个账号的健康检查", Severity.Info);
         }
         catch (Exception ex)
@@ -559,7 +701,7 @@
                 AccountIds = new[] { accountId },
                 Source = "manual"
             };
-            await HealthCheckService.TriggerCheckAsync(request, CancellationToken.None);
+            await HealthCheckService.TriggerCheckAsync(request, _cts.Token);
             Snackbar.Add("已触发状态检查", Severity.Info);
         }
         catch (Exception ex)
@@ -717,8 +859,9 @@
         {
             try
             {
-                var httpClient = HttpClientFactory.CreateClient();
-                var response = await httpClient.DeleteAsync($"/api/accounts/{account.Id}");
+                using var httpClient = CreateAuthenticatedHttpClient();
+                var requestUri = Navigation.ToAbsoluteUri($"/api/accounts/{account.Id}").ToString();
+                var response = await httpClient.DeleteAsync(requestUri);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -764,8 +907,9 @@
             content.Add(streamContent, "file", _selectedZipFile.Name);
 
             // 发送到API
-            var httpClient = HttpClientFactory.CreateClient();
-            var response = await httpClient.PostAsync("/api/accounts/import", content);
+            using var httpClient = CreateAuthenticatedHttpClient();
+            var requestUri = Navigation.ToAbsoluteUri("/api/accounts/import").ToString();
+            var response = await httpClient.PostAsync(requestUri, content);
 
             if (response.IsSuccessStatusCode)
             {
@@ -791,6 +935,96 @@
         }
     }
 
+    // Session 文件导入相关方法
+    private async Task HandleSessionFileSelected(IBrowserFile file)
+    {
+        _selectedSessionFile = file;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task UploadSessionFileAsync()
+    {
+        if (_selectedSessionFile is null)
+            return;
+
+        _isUploadingSession = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileStream = _selectedSessionFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
+            var streamContent = new StreamContent(fileStream);
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+            content.Add(streamContent, "file", _selectedSessionFile.Name);
+
+            using var httpClient = CreateAuthenticatedHttpClient();
+            var requestUri = Navigation.ToAbsoluteUri("/api/accounts/import-session").ToString();
+            var response = await httpClient.PostAsync(requestUri, content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Session 文件导入成功！", Severity.Success);
+                _selectedSessionFile = null;
+                await ReloadAsync();
+            }
+            else
+            {
+                var errorMessage = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"导入失败: {errorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "上传 Session 文件时发生错误");
+            Snackbar.Add($"上传错误: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isUploadingSession = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // StringSession 导入方法
+    private async Task ImportStringSessionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_stringSessionInput))
+            return;
+
+        _isImportingStringSession = true;
+        try
+        {
+            using var httpClient = CreateAuthenticatedHttpClient();
+            var requestUri = Navigation.ToAbsoluteUri("/api/accounts/import-string-session").ToString();
+            var payload = new StringContent(
+                System.Text.Json.JsonSerializer.Serialize(new { sessionString = _stringSessionInput.Trim() }),
+                System.Text.Encoding.UTF8,
+                "application/json");
+            var response = await httpClient.PostAsync(requestUri, payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("StringSession 导入成功！", Severity.Success);
+                _stringSessionInput = null;
+                await ReloadAsync();
+            }
+            else
+            {
+                var errorMessage = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"导入失败: {errorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "导入 StringSession 时发生错误");
+            Snackbar.Add($"导入错误: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isImportingStringSession = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     // 分页相关方法
     private int GetPageCount()
     {
@@ -806,26 +1040,47 @@
 
     public async ValueTask DisposeAsync()
     {
+        await _cts.CancelAsync();
+        _cts.Dispose();
+
         if (_hubConnection is not null)
         {
             await _hubConnection.DisposeAsync();
         }
     }
-}
 
-// 简化的事件类型定义（用于 SignalR）
-public sealed class AccountStatusEvent
-{
-    public long AccountId { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public bool IsOnline { get; set; }
-    public string? Error { get; set; }
-}
+    /// <summary>
+    /// 创建带有身份验证 Cookie 的 HttpClient
+    /// </summary>
+    private HttpClient CreateAuthenticatedHttpClient()
+    {
+        var httpClient = HttpClientFactory.CreateClient();
 
-public sealed class AlertTriggeredEvent
-{
-    public long? AccountId { get; set; }
-    public string AlertType { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-    public DateTime TriggeredAtUtc { get; set; }
+        // 获取当前请求的 Cookie 用于 API 认证
+        var cookies = HttpContextAccessor.HttpContext?.Request.Cookies;
+        if (cookies != null && cookies.Count > 0)
+        {
+            var cookieHeader = string.Join("; ", cookies.Select(c => $"{c.Key}={c.Value}"));
+            httpClient.DefaultRequestHeaders.Add("Cookie", cookieHeader);
+        }
+
+        return httpClient;
+    }
+
+    // 简化的事件类型定义（用于 SignalR）
+    private sealed class AccountStatusEvent
+    {
+        public long AccountId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public bool IsOnline { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private sealed class AlertTriggeredEvent
+    {
+        public long? AccountId { get; set; }
+        public string AlertType { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public DateTime TriggeredAtUtc { get; set; }
+    }
 }

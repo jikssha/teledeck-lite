@@ -259,6 +259,70 @@ public sealed class AccountService : IAccountService
         }
     }
 
+    public async Task<long> ImportSessionFileAsync(Stream sessionStream, string fileName, CancellationToken cancellationToken)
+    {
+        // 从文件名提取手机号（去掉扩展名）
+        var phone = Path.GetFileNameWithoutExtension(fileName);
+        if (string.IsNullOrWhiteSpace(phone))
+            throw new ValidationException("无法从文件名解析手机号。");
+
+        // 检查重复
+        var existing = await _accountStore.ListAsync(cancellationToken);
+        if (existing.Any(x => x.Phone == phone))
+            throw new ValidationException($"手机号 {phone} 已存在，请勿重复添加。");
+
+        // 创建账号记录
+        var placeholderDir = Path.Combine(_runtime.DataDir, "accounts", "pending");
+        var accountId = await _accountStore.CreateAsync(phone, placeholderDir, AccountStatus.Ready, cancellationToken);
+
+        // 设置最终目录
+        var finalDir = Path.Combine(_runtime.DataDir, "accounts", accountId.ToString());
+        await _accountStore.UpdateDataDirAsync(accountId, finalDir, cancellationToken);
+        Directory.CreateDirectory(finalDir);
+
+        // 保存 session 文件
+        var sessionPath = Path.Combine(finalDir, "session.dat");
+        await using var fs = new FileStream(sessionPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await sessionStream.CopyToAsync(fs, cancellationToken);
+
+        return accountId;
+    }
+
+    public async Task<long> ImportStringSessionAsync(string sessionString, CancellationToken cancellationToken)
+    {
+        // 验证 Base64 格式
+        byte[] sessionBytes;
+        try
+        {
+            sessionBytes = Convert.FromBase64String(sessionString);
+        }
+        catch (FormatException)
+        {
+            throw new ValidationException("无效的 Base64 格式。");
+        }
+
+        if (sessionBytes.Length < 10)
+            throw new ValidationException("Session 数据过短，可能不是有效的 session。");
+
+        // 生成临时手机号标识（基于时间戳）
+        var phone = $"imported_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+
+        // 创建账号记录
+        var placeholderDir = Path.Combine(_runtime.DataDir, "accounts", "pending");
+        var accountId = await _accountStore.CreateAsync(phone, placeholderDir, AccountStatus.Ready, cancellationToken);
+
+        // 设置最终目录
+        var finalDir = Path.Combine(_runtime.DataDir, "accounts", accountId.ToString());
+        await _accountStore.UpdateDataDirAsync(accountId, finalDir, cancellationToken);
+        Directory.CreateDirectory(finalDir);
+
+        // 保存 session 文件
+        var sessionPath = Path.Combine(finalDir, "session.dat");
+        await File.WriteAllBytesAsync(sessionPath, sessionBytes, cancellationToken);
+
+        return accountId;
+    }
+
     private async Task<bool> TryMarkReadyAsync(long accountId, ITdClient client, CancellationToken cancellationToken)
     {
         try

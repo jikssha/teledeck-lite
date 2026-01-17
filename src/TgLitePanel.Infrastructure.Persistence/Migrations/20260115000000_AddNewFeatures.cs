@@ -152,6 +152,12 @@ namespace TgLitePanel.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValueSql: "datetime('now')");
 
+            migrationBuilder.AddColumn<string>(
+                name: "two_factor_password",
+                table: "accounts",
+                type: "TEXT",
+                nullable: true);
+
             // 索引
             migrationBuilder.CreateIndex(
                 name: "IX_account_groups_name",
@@ -204,6 +210,7 @@ namespace TgLitePanel.Infrastructure.Persistence.Migrations
             migrationBuilder.DropColumn(name: "is_online", table: "accounts");
             migrationBuilder.DropColumn(name: "display_name", table: "accounts");
             migrationBuilder.DropColumn(name: "username", table: "accounts");
+            migrationBuilder.DropColumn(name: "two_factor_password", table: "accounts");
             migrationBuilder.DropColumn(name: "created_at_utc", table: "accounts");
         }
     }

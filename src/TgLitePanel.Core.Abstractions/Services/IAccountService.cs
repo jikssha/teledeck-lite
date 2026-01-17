@@ -16,5 +16,7 @@ public interface IAccountService
     Task<Stream> ExportZipAsync(long accountId, CancellationToken cancellationToken);
     Task<Stream> ExportAllZipAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<long>> ImportZipAsync(Stream zipStream, long zipLength, CancellationToken cancellationToken);
+    Task<long> ImportSessionFileAsync(Stream sessionStream, string fileName, CancellationToken cancellationToken);
+    Task<long> ImportStringSessionAsync(string sessionString, CancellationToken cancellationToken);
     Task DeleteAsync(long accountId, CancellationToken cancellationToken);
 }

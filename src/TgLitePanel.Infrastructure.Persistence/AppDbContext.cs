@@ -73,6 +73,7 @@ public sealed class AppDbContext : DbContext
             b.Property(x => x.IsOnline).HasColumnName("is_online");
             b.Property(x => x.DisplayName).HasColumnName("display_name");
             b.Property(x => x.Username).HasColumnName("username");
+            b.Property(x => x.TwoFactorPassword).HasColumnName("two_factor_password");
             b.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
             b.HasIndex(x => x.Phone);
             b.HasIndex(x => x.GroupId);
