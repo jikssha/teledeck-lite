@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgLitePanel.Core.Abstractions.Exceptions;
@@ -29,19 +30,16 @@ public sealed class WTelegramClientManager : ITdClientManager
     }
 
     private readonly ConcurrentDictionary<long, ClientEntry> _entries = new();
-    private readonly IAppConfigStore _appConfigStore;
-    private readonly IAccountStore _accountStore;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<WTelegramClientManager> _logger;
     private readonly WTelegramRuntimeOptions _options;
 
     public WTelegramClientManager(
-        IAppConfigStore appConfigStore,
-        IAccountStore accountStore,
+        IServiceScopeFactory scopeFactory,
         IOptions<WTelegramRuntimeOptions> options,
         ILogger<WTelegramClientManager> logger)
     {
-        _appConfigStore = appConfigStore;
-        _accountStore = accountStore;
+        _scopeFactory = scopeFactory;
         _logger = logger;
         _options = options.Value;
     }
@@ -177,11 +175,15 @@ public sealed class WTelegramClientManager : ITdClientManager
 
     private async Task CreateClientAsync(ClientEntry entry, CancellationToken ct)
     {
-        var account = await _accountStore.GetAsync(entry.AccountId, ct);
+        using var scope = _scopeFactory.CreateScope();
+        var accountStore = scope.ServiceProvider.GetRequiredService<IAccountStore>();
+        var appConfigStore = scope.ServiceProvider.GetRequiredService<IAppConfigStore>();
+
+        var account = await accountStore.GetAsync(entry.AccountId, ct);
         if (account is null)
             throw new NotFoundException($"账号不存在：{entry.AccountId}");
 
-        var apiConfig = await _appConfigStore.GetTelegramApiConfigAsync(ct);
+        var apiConfig = await appConfigStore.GetTelegramApiConfigAsync(ct);
         if (apiConfig is null || string.IsNullOrEmpty(apiConfig.ApiHash))
             throw new ValidationException("Telegram API 配置不完整，请先在设置中配置 API ID 和 API Hash");
 
@@ -217,8 +219,10 @@ public sealed class WTelegramClientManager : ITdClientManager
                 _logger.LogInformation("账号 {AccountId} 自动登录成功: {Name}",
                     entry.AccountId, user.first_name);
 
-                // 更新账号状态为 Ready
-                await _accountStore.UpdateStatusAsync(entry.AccountId, AccountStatus.Ready, null, ct);
+                // 更新账号状态为 Ready（需要新的作用域因为前一个可能已释放）
+                using var updateScope = _scopeFactory.CreateScope();
+                var updateAccountStore = updateScope.ServiceProvider.GetRequiredService<IAccountStore>();
+                await updateAccountStore.UpdateStatusAsync(entry.AccountId, AccountStatus.Ready, null, ct);
             }
         }
         catch (Exception ex)

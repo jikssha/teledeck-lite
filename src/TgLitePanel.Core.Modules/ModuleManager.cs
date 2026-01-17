@@ -16,7 +16,7 @@ namespace TgLitePanel.Core.Modules;
 public sealed class ModuleManager : IModuleManager, IAsyncDisposable
 {
     private readonly ModuleValidator _validator;
-    private readonly IModuleStore _store;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IServiceProvider _hostServices;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ModuleManager> _logger;
@@ -30,14 +30,14 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
 
     public ModuleManager(
         ModuleValidator validator,
-        IModuleStore store,
+        IServiceScopeFactory scopeFactory,
         IServiceProvider hostServices,
         IConfiguration configuration,
         IOptions<ModuleOptions> options,
         ILogger<ModuleManager> logger)
     {
         _validator = validator;
-        _store = store;
+        _scopeFactory = scopeFactory;
         _hostServices = hostServices;
         _configuration = configuration;
         _logger = logger;
@@ -47,6 +47,12 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
         _modulesPath = Path.GetFullPath(Path.Combine(dataDir, _options.ModulesDirectory));
         Directory.CreateDirectory(_modulesPath);
     }
+
+    /// <summary>
+    /// 获取模块存储（在作用域内使用）
+    /// </summary>
+    private IModuleStore GetModuleStore(IServiceScope scope)
+        => scope.ServiceProvider.GetRequiredService<IModuleStore>();
 
     private static string NormalizeDirectoryPath(string path)
     {
@@ -99,7 +105,9 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
             warnings.AddRange(validation.Warnings ?? Enumerable.Empty<string>());
 
             // 2. 检查是否已安装
-            var existing = await _store.GetModuleAsync(manifest.Id, cancellationToken);
+            using var scope = _scopeFactory.CreateScope();
+            var store = GetModuleStore(scope);
+            var existing = await store.GetModuleAsync(manifest.Id, cancellationToken);
             if (existing != null)
             {
                 // 如果模块正在运行，先卸载
@@ -180,10 +188,10 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
                 Routes = manifest.Routes ?? new List<ModuleRoute>()
             };
 
-            await _store.SaveModuleAsync(moduleInfo, cancellationToken);
+            await store.SaveModuleAsync(moduleInfo, cancellationToken);
 
             // 5. 记录审计日志
-            await _store.AddAuditLogAsync(
+            await store.AddAuditLogAsync(
                 manifest.Id,
                 "installed",
                 new { manifest.Version, manifest.Permissions },
@@ -220,7 +228,9 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
             }
 
             // 2. 获取模块信息
-            var module = await _store.GetModuleAsync(moduleId, cancellationToken);
+            using var scope = _scopeFactory.CreateScope();
+            var store = GetModuleStore(scope);
+            var module = await store.GetModuleAsync(moduleId, cancellationToken);
             if (module == null)
             {
                 return false;
@@ -241,10 +251,10 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
             }
 
             // 4. 从数据库删除
-            await _store.DeleteModuleAsync(moduleId, cancellationToken);
+            await store.DeleteModuleAsync(moduleId, cancellationToken);
 
             // 5. 记录审计日志
-            await _store.AddAuditLogAsync(
+            await store.AddAuditLogAsync(
                 moduleId,
                 "uninstalled",
                 new { module.Version },
@@ -273,7 +283,9 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
         await _loadLock.WaitAsync(cancellationToken);
         try
         {
-            var module = await _store.GetModuleAsync(moduleId, cancellationToken);
+            using var scope = _scopeFactory.CreateScope();
+            var store = GetModuleStore(scope);
+            var module = await store.GetModuleAsync(moduleId, cancellationToken);
             if (module == null)
             {
                 _logger.LogWarning("尝试启用不存在的模块：{ModuleId}", moduleId);
@@ -291,10 +303,10 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
                 var instance = await LoadModuleAsync(module, cancellationToken);
                 _loadedModules[moduleId] = instance;
 
-                await _store.UpdateModuleStatusAsync(moduleId, ModuleStatus.Enabled, null, cancellationToken);
-                await _store.UpdateLastLoadedTimeAsync(moduleId, DateTime.UtcNow, cancellationToken);
+                await store.UpdateModuleStatusAsync(moduleId, ModuleStatus.Enabled, null, cancellationToken);
+                await store.UpdateLastLoadedTimeAsync(moduleId, DateTime.UtcNow, cancellationToken);
 
-                await _store.AddAuditLogAsync(
+                await store.AddAuditLogAsync(
                     moduleId,
                     "enabled",
                     null,
@@ -312,7 +324,7 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
             {
                 _logger.LogError(ex, "加载模块 {ModuleId} 失败", moduleId);
 
-                await _store.UpdateModuleStatusAsync(
+                await store.UpdateModuleStatusAsync(
                     moduleId,
                     ModuleStatus.Error,
                     ex.Message,
@@ -338,7 +350,9 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
         await _loadLock.WaitAsync(cancellationToken);
         try
         {
-            var module = await _store.GetModuleAsync(moduleId, cancellationToken);
+            using var scope = _scopeFactory.CreateScope();
+            var store = GetModuleStore(scope);
+            var module = await store.GetModuleAsync(moduleId, cancellationToken);
             if (module == null)
             {
                 return false;
@@ -349,9 +363,9 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
                 await instance.DisposeAsync();
             }
 
-            await _store.UpdateModuleStatusAsync(moduleId, ModuleStatus.Disabled, null, cancellationToken);
+            await store.UpdateModuleStatusAsync(moduleId, ModuleStatus.Disabled, null, cancellationToken);
 
-            await _store.AddAuditLogAsync(
+            await store.AddAuditLogAsync(
                 moduleId,
                 "disabled",
                 null,
@@ -375,7 +389,9 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
     public async Task<IReadOnlyList<ModuleInfo>> GetAllModulesAsync(
         CancellationToken cancellationToken = default)
     {
-        return await _store.GetAllModulesAsync(cancellationToken);
+        using var scope = _scopeFactory.CreateScope();
+        var store = GetModuleStore(scope);
+        return await store.GetAllModulesAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -383,7 +399,9 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
         string moduleId,
         CancellationToken cancellationToken = default)
     {
-        return await _store.GetModuleAsync(moduleId, cancellationToken);
+        using var scope = _scopeFactory.CreateScope();
+        var store = GetModuleStore(scope);
+        return await store.GetModuleAsync(moduleId, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -405,7 +423,9 @@ public sealed class ModuleManager : IModuleManager, IAsyncDisposable
     /// <inheritdoc />
     public async Task LoadEnabledModulesAsync(CancellationToken cancellationToken = default)
     {
-        var enabledModules = await _store.GetEnabledModulesAsync(cancellationToken);
+        using var scope = _scopeFactory.CreateScope();
+        var store = GetModuleStore(scope);
+        var enabledModules = await store.GetEnabledModulesAsync(cancellationToken);
 
         foreach (var module in enabledModules)
         {
