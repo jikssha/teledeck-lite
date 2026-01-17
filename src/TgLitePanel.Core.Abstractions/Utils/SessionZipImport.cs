@@ -9,6 +9,23 @@ namespace TgLitePanel.Core.Abstractions.Utils;
 /// 支持格式：
 /// 1. 单账号：ZIP 根目录包含 .json + .session 文件
 /// 2. 批量导入：每个账号一个子文件夹，包含 .json + .session + 可选 2fa.txt
+///
+/// 文件夹命名规则：
+/// - 统一使用省略+号的国际区号格式：8613111111111/（相当于 +86 13111111111）
+/// - 手机号从 JSON 的 "phone" 或 "phone_number" 字段读取
+/// - 如无 JSON 或 JSON 中无手机号，则使用文件夹名作为手机号
+/// - 导入时，如号码不带+号会自动添加（8613111111111 → +8613111111111）
+/// - 导出时，会自动去除+号（+8613111111111 → 8613111111111）
+///
+/// 示例结构（86、1等为国际区号）：
+/// accounts.zip
+///   ├─ 8613111111111/                      (中国区号86 + 手机号)
+///   │   ├─ 8613111111111.json              (可选，包含 {"phone": "8613111111111"})
+///   │   ├─ 8613111111111.session           (必需)
+///   │   └─ 2fa.txt                         (可选，二级验证密码)
+///   └─ 15551234567/                        (美国区号1 + 手机号)
+///       ├─ 15551234567.session
+///       └─ 2fa.txt
 /// </summary>
 public static class SessionZipImport
 {
@@ -36,6 +53,42 @@ public static class SessionZipImport
     /// 最大压缩比率（解压大小/压缩大小），超过此比率视为可疑
     /// </summary>
     public const double MaxCompressionRatio = 100.0;
+
+    /// <summary>
+    /// 标准化手机号格式（导入用）
+    /// 如果号码不带+号，自动添加+号以符合国际格式
+    /// 例如：8613111111111 → +8613111111111
+    /// </summary>
+    public static string NormalizePhoneForImport(string phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+            return phone;
+
+        phone = phone.Trim();
+
+        // 如果已经带+号，直接返回
+        if (phone.StartsWith("+"))
+            return phone;
+
+        // 否则添加+号
+        return "+" + phone;
+    }
+
+    /// <summary>
+    /// 标准化手机号格式（导出用）
+    /// 去除+号以符合导出格式要求
+    /// 例如：+8613111111111 → 8613111111111
+    /// </summary>
+    public static string NormalizePhoneForExport(string phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+            return phone;
+
+        phone = phone.Trim();
+
+        // 去除+号
+        return phone.TrimStart('+');
+    }
 
     /// <summary>
     /// 导入的账号信息
@@ -180,6 +233,9 @@ public static class SessionZipImport
                 if (string.IsNullOrEmpty(phone))
                     phone = folderName;
 
+                // 标准化手机号格式（添加+号）
+                phone = NormalizePhoneForImport(phone);
+
                 // 读取 2FA 密码
                 string? twoFaPassword = null;
                 if (twoFaEntry is not null)
@@ -249,6 +305,9 @@ public static class SessionZipImport
         // 如果没有手机号，使用 session 文件名
         if (string.IsNullOrEmpty(phone))
             phone = baseName;
+
+        // 标准化手机号格式（添加+号）
+        phone = NormalizePhoneForImport(phone);
 
         // 查找 2fa.txt
         var twoFaEntry = zip.Entries.FirstOrDefault(e =>

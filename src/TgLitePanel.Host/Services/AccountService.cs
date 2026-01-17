@@ -161,6 +161,7 @@ public sealed class AccountService : IAccountService
     /// <summary>
     /// 将账号的会话文件添加到 ZIP 归档
     /// 格式：{phone}/{phone}.session + {phone}/{phone}.json
+    /// 注意：导出时会去除手机号的+号，例如 +8613111111111 → 8613111111111
     /// </summary>
     private static async Task AddSessionFilesToZipAsync(
         ZipArchive zip,
@@ -174,8 +175,11 @@ public sealed class AccountService : IAccountService
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        // 标准化手机号格式（去除+号）
+        var normalizedPhone = SessionZipImport.NormalizePhoneForExport(phone);
+
         // 添加 .session 文件
-        var sessionZipPath = $"{phone}/{phone}.session";
+        var sessionZipPath = $"{normalizedPhone}/{normalizedPhone}.session";
         var sessionEntry = zip.CreateEntry(sessionZipPath, CompressionLevel.Fastest);
         await using (var entryStream = sessionEntry.Open())
         await using (var fileStream = new FileStream(sessionPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
@@ -183,14 +187,14 @@ public sealed class AccountService : IAccountService
             await fileStream.CopyToAsync(entryStream, cancellationToken);
         }
 
-        // 添加元数据 .json 文件
+        // 添加元数据 .json 文件（保持原始手机号格式以便重新导入）
         var metadata = new
         {
-            phone,
+            phone = normalizedPhone,
             exportedAtUtc = DateTime.UtcNow
         };
 
-        var jsonZipPath = $"{phone}/{phone}.json";
+        var jsonZipPath = $"{normalizedPhone}/{normalizedPhone}.json";
         var jsonEntry = zip.CreateEntry(jsonZipPath, CompressionLevel.Fastest);
         await using var jsonStream = jsonEntry.Open();
         await JsonSerializer.SerializeAsync(jsonStream, metadata, cancellationToken: cancellationToken);
