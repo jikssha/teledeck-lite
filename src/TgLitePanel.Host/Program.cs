@@ -21,7 +21,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-builder.Services.AddMudServices();
+builder.Services.AddMudServices(config =>
+{
+    // 禁用重复 PopoverProvider 检测，避免 Blazor Server 预渲染时的异常
+    config.PopoverOptions.ThrowOnDuplicateProvider = false;
+});
 builder.Services.AddSignalR();
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();
